@@ -52,6 +52,8 @@ bot.prefix=!
 
 - `!play <url or search>`
 - `!skip`
+- `!pause`
+- `!resume`
 - `!stop`
 - `!leave`
 - `!volume`

@@ -110,6 +110,42 @@ public class MusicController {
         }
     }
 
+    public void pause(TextChannel channel) {
+        GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
+        AudioTrack current = musicManager.player.getPlayingTrack();
+
+        if (current == null) {
+            channel.sendMessage("Nothing is playing right now.").queue();
+            return;
+        }
+
+        if (musicManager.player.isPaused()) {
+            channel.sendMessage("Playback is already paused.").queue();
+            return;
+        }
+
+        musicManager.player.setPaused(true);
+        channel.sendMessage("Paused playback.").queue();
+    }
+
+    public void resume(TextChannel channel) {
+        GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
+        AudioTrack current = musicManager.player.getPlayingTrack();
+
+        if (current == null) {
+            channel.sendMessage("Nothing is playing right now.").queue();
+            return;
+        }
+
+        if (!musicManager.player.isPaused()) {
+            channel.sendMessage("Playback is already running.").queue();
+            return;
+        }
+
+        musicManager.player.setPaused(false);
+        channel.sendMessage("Resumed playback.").queue();
+    }
+
     public void stop(TextChannel channel) {
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         musicManager.scheduler.stop();
@@ -222,6 +258,7 @@ public class MusicController {
                 "msSinceLastFrame=" + (lastFrameMs < 0 ? "never" : lastFrameMs),
                 "lastCodec=" + musicManager.sendHandler.getLastCodecName(),
                 "lastFrameBytes=" + musicManager.sendHandler.getLastDataLength(),
+                "paused=" + musicManager.player.isPaused(),
                 "volume=" + musicManager.player.getVolume(),
                 "bassLevel=" + musicManager.getBassLevel());
 

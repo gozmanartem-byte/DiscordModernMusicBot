@@ -46,6 +46,8 @@ public class CommandListener extends ListenerAdapter {
                 }
             }
             case "skip" -> musicController.skip(channel);
+            case "pause" -> musicController.pause(channel);
+            case "resume" -> musicController.resume(channel);
             case "stop", "leave", "disconnect", "dc" -> musicController.stop(channel);
             case "volume", "vol" -> {
                 if (argument.isBlank()) {
@@ -99,6 +101,8 @@ public class CommandListener extends ListenerAdapter {
                 "Commands:",
                 prefix + "play <url or search>",
                 prefix + "skip",
+                prefix + "pause",
+                prefix + "resume",
                 prefix + "stop",
                 prefix + "leave",
                 prefix + "volume <0-200>",

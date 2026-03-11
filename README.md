@@ -61,10 +61,19 @@ To build downloadable release zips for macOS, Linux, and Windows:
 
 This creates zip files in `dist/releases/` that you can upload to the GitHub release page as assets.
 
+Current packaged targets:
+
+- macOS
+- Linux x86-64
+- Linux ARM64
+- Windows x86-64
+
 ## Commands
 
 - `!play <url or search>`
 - `!skip`
+- `!pause`
+- `!resume`
 - `!stop`
 - `!leave`
 - `!volume`

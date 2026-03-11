@@ -15,6 +15,8 @@ Do not publish ModernMusicBot.properties with a real token.
 Commands:
 !play <url or search>
 !skip
+!pause
+!resume
 !stop
 !leave
 !volume            (show current)
