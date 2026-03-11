@@ -65,6 +65,28 @@ bot.token=YOUR_DISCORD_BOT_TOKEN
 bot.prefix=!
 ```
 
+### Easiest Option (Control Panel)
+
+Use the desktop-like control panel with Start/Stop buttons and built-in settings form.
+
+macOS:
+
+```bash
+./control-panel.command
+```
+
+Linux:
+
+```bash
+./control-panel.sh
+```
+
+Windows:
+
+```bat
+control-panel.bat
+```
+
 4. Start bot:
 
 ```bash
