@@ -34,9 +34,14 @@ public class BotRuntime {
             throw new IllegalStateException("Bot is already running.");
         }
 
-        BotConfig config = BotConfig.load(configPath);
+        Path resolvedConfigPath = configPath.toAbsolutePath().normalize();
+        Path stateDirectory = resolvedConfigPath.getParent() == null
+                ? Path.of(".").toAbsolutePath().normalize()
+                : resolvedConfigPath.getParent();
+
+        BotConfig config = BotConfig.load(resolvedConfigPath);
         I18n i18n = new I18n(config.languageCode());
-        GuildSettingsStore settingsStore = new GuildSettingsStore(Path.of("guild-settings.db"), config.prefix(), config.languageCode());
+        GuildSettingsStore settingsStore = new GuildSettingsStore(stateDirectory.resolve("guild-settings.db"), config.prefix(), config.languageCode());
 
         AudioModuleConfig audioModuleConfig = new AudioModuleConfig()
             .withDaveSessionFactory(new JDaveSessionFactory())
@@ -86,6 +91,8 @@ public class BotRuntime {
             logger.accept("Dashboard started at " + dashboardServer.baseUrl());
         }
 
+        logger.accept("Config path: " + resolvedConfigPath);
+        logger.accept("State path: " + stateDirectory);
         logger.accept("Bot started successfully.");
     }
 

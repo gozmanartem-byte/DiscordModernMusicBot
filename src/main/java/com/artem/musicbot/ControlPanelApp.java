@@ -40,6 +40,7 @@ public class ControlPanelApp {
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
     private static final Path CONFIG_PATH = Path.of("ModernMusicBot.properties");
     private static final Path APP_HOME_PATH = Path.of(System.getProperty("user.home"), ".modernmusicbot");
+    private static final Path DESKTOP_CONFIG_PATH = APP_HOME_PATH.resolve("ModernMusicBot.properties");
     private static final Path FIRST_LAUNCH_MARKER = APP_HOME_PATH.resolve("first-launch-banner-seen.flag");
     private static final LanguageOption[] LANGUAGE_OPTIONS = {
         new LanguageOption("English", "en"),
@@ -202,7 +203,7 @@ public class ControlPanelApp {
                 try {
                     saveConfigFromFields();
                     log("Starting bot...");
-                    runtime.start(CONFIG_PATH, true, this::log);
+                    runtime.start(resolveConfigPath(), true, this::log);
                     SwingUtilities.invokeLater(() -> {
                         stopButton.setEnabled(true);
                         startButton.setEnabled(false);
@@ -467,13 +468,14 @@ public class ControlPanelApp {
     }
 
     private void loadConfigIntoFields() {
-        if (!Files.exists(CONFIG_PATH)) {
+        Path configPath = resolveConfigPath();
+        if (!Files.exists(configPath)) {
             log("No config found yet. Enter token and prefix, then press Start.");
             return;
         }
 
         Properties props = new Properties();
-        try (InputStream in = Files.newInputStream(CONFIG_PATH)) {
+        try (InputStream in = Files.newInputStream(configPath)) {
             props.load(in);
         } catch (IOException e) {
             log("Could not read config: " + e.getMessage());
@@ -487,6 +489,7 @@ public class ControlPanelApp {
     }
 
     private void saveConfigFromFields() throws IOException {
+        Path configPath = resolveConfigPath();
         String token = new String(tokenField.getPassword()).trim();
         String prefix = prefixField.getText().trim();
         LanguageOption selected = (LanguageOption) languageCombo.getSelectedItem();
@@ -502,8 +505,12 @@ public class ControlPanelApp {
         }
 
         Properties props = new Properties();
-        if (Files.exists(CONFIG_PATH)) {
-            try (InputStream in = Files.newInputStream(CONFIG_PATH)) {
+        if (configPath.getParent() != null) {
+            Files.createDirectories(configPath.getParent());
+        }
+
+        if (Files.exists(configPath)) {
+            try (InputStream in = Files.newInputStream(configPath)) {
                 props.load(in);
             }
         }
@@ -514,9 +521,15 @@ public class ControlPanelApp {
         props.putIfAbsent("youtube.poToken", "");
         props.putIfAbsent("youtube.visitorData", "");
 
-        try (OutputStream out = Files.newOutputStream(CONFIG_PATH)) {
+        try (OutputStream out = Files.newOutputStream(configPath)) {
             props.store(out, "ModernMusicBot settings");
         }
+
+        log("Config saved to: " + configPath.toAbsolutePath());
+    }
+
+    private Path resolveConfigPath() {
+        return isDesktopOnboardingEnabled() ? DESKTOP_CONFIG_PATH : CONFIG_PATH;
     }
 
     private void showFirstLaunchBannerIfNeeded() {
