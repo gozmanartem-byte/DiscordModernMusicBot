@@ -72,6 +72,21 @@ bot.prefix=!
 - Never commit `ModernMusicBot.properties` with a real token.
 - If a token is exposed, rotate it immediately in Discord Developer Portal.
 
+## Contributing
+
+Contributions are welcome.
+
+- Fork the repository
+- Create a feature branch
+- Commit your changes with clear messages
+- Open a pull request with a short description and test steps
+
+Please avoid committing secrets, local config files, or generated artifacts.
+
+## License
+
+No license file is provided yet. Until a license is added, all rights are reserved by default.
+
 ## More Details
 
 See `README_INSTALLATION.md` for full installation and Discord app setup steps.
