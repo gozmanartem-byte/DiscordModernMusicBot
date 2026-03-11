@@ -45,10 +45,34 @@ bot.prefix=!
 ./start.command
 ```
 
+Linux:
+
+```bash
+./start.sh
+```
+
+Windows:
+
+```bat
+start.bat
+```
+
 5. Stop bot:
 
 ```bash
 ./stop.command
+```
+
+Linux:
+
+```bash
+./stop.sh
+```
+
+Windows:
+
+```bat
+stop.bat
 ```
 
 ## Release Packages
