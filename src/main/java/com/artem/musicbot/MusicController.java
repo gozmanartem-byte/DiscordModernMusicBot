@@ -1,5 +1,7 @@
 package com.artem.musicbot;
 
+import java.awt.Color;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -16,10 +18,16 @@ import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
 import dev.lavalink.youtube.YoutubeAudioSourceManager;
 import dev.lavalink.youtube.clients.AndroidVr;
 import dev.lavalink.youtube.clients.Web;
+import net.dv8tion.jda.api.EmbedBuilder;
+import net.dv8tion.jda.api.components.MessageTopLevelComponent;
+import net.dv8tion.jda.api.components.actionrow.ActionRow;
+import net.dv8tion.jda.api.components.buttons.Button;
 import net.dv8tion.jda.api.entities.Activity;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.GuildVoiceState;
 import net.dv8tion.jda.api.entities.Member;
+import net.dv8tion.jda.api.entities.Message;
+import net.dv8tion.jda.api.entities.MessageEmbed;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
 import net.dv8tion.jda.api.entities.channel.concrete.VoiceChannel;
 import net.dv8tion.jda.api.managers.AudioManager;
@@ -234,6 +242,18 @@ public class MusicController {
         channel.sendMessage(builder.toString()).queue();
     }
 
+    public void sendPlayerPanel(TextChannel channel, String prefix) {
+        channel.sendMessageEmbeds(buildPlayerEmbed(channel.getGuild(), prefix))
+                .setComponents(playerComponents())
+                .queue();
+    }
+
+    public void refreshPlayerPanel(Message message, String prefix) {
+        message.editMessageEmbeds(buildPlayerEmbed(message.getGuild(), prefix))
+                .setComponents(playerComponents())
+                .queue();
+    }
+
     public void debugAudio(TextChannel channel) {
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         AudioTrack current = musicManager.player.getPlayingTrack();
@@ -321,6 +341,90 @@ public class MusicController {
         } else {
             guild.getJDA().getPresence().setActivity(Activity.playing(i18n.t("status.playing", title)));
         }
+    }
+
+    private MessageEmbed buildPlayerEmbed(Guild guild, String prefix) {
+        GuildMusicManager musicManager = getGuildMusicManager(guild);
+        AudioTrack current = musicManager.player.getPlayingTrack();
+
+        String state = current == null
+                ? i18n.t("player.state.idle")
+                : musicManager.player.isPaused()
+                    ? i18n.t("player.state.paused")
+                    : i18n.t("player.state.playing");
+
+        String trackValue = current == null
+                ? i18n.t("player.none")
+                : current.getInfo().title + "\n`" + formatDuration(current.getPosition()) + " / " + formatDuration(current.getDuration()) + "`";
+
+        var connectedChannel = guild.getAudioManager().getConnectedChannel();
+        String voiceValue = connectedChannel == null ? i18n.t("player.notConnected") : connectedChannel.getName();
+        String queueValue = buildQueuePreview(musicManager);
+
+        return new EmbedBuilder()
+                .setTitle(i18n.t("player.title"))
+                .setDescription(i18n.t("player.hint", prefix))
+                .setColor(current == null ? new Color(120, 120, 120) : new Color(46, 204, 113))
+                .addField(i18n.t("player.status"), state, true)
+                .addField(i18n.t("player.voice"), voiceValue, true)
+                .addField(i18n.t("player.volume"), musicManager.player.getVolume() + "%", true)
+                .addField(i18n.t("player.track"), trackValue, false)
+                .addField(i18n.t("player.queuePreview"), queueValue, false)
+                .addField(i18n.t("player.bass"), String.valueOf(musicManager.getBassLevel()), true)
+                .setFooter(i18n.t("player.footer", prefix))
+                .build();
+    }
+
+    private List<MessageTopLevelComponent> playerComponents() {
+        return List.of(
+                ActionRow.of(
+                        Button.secondary("player:pause", i18n.t("player.pause")),
+                        Button.success("player:resume", i18n.t("player.resume")),
+                        Button.primary("player:skip", i18n.t("player.skip")),
+                        Button.danger("player:stop", i18n.t("player.stop"))
+                ),
+                ActionRow.of(
+                        Button.primary("player:queue", i18n.t("player.queue")),
+                        Button.secondary("player:voldown", i18n.t("player.voldown")),
+                        Button.secondary("player:volup", i18n.t("player.volup")),
+                        Button.secondary("player:refresh", i18n.t("player.refresh"))
+                )
+        );
+    }
+
+    private String buildQueuePreview(GuildMusicManager musicManager) {
+        if (musicManager.scheduler.getQueue().isEmpty()) {
+            return i18n.t("player.queueEmpty");
+        }
+
+        StringBuilder builder = new StringBuilder();
+        int index = 1;
+        for (AudioTrack track : musicManager.scheduler.getQueue()) {
+            builder.append(index++).append(". ").append(track.getInfo().title).append('\n');
+            if (index > 5) {
+                builder.append("...");
+                break;
+            }
+        }
+
+        return builder.toString().trim();
+    }
+
+    private String formatDuration(long durationMillis) {
+        if (durationMillis < 0) {
+            return "live";
+        }
+
+        long totalSeconds = durationMillis / 1000;
+        long hours = totalSeconds / 3600;
+        long minutes = (totalSeconds % 3600) / 60;
+        long seconds = totalSeconds % 60;
+
+        if (hours > 0) {
+            return String.format("%d:%02d:%02d", hours, minutes, seconds);
+        }
+
+        return String.format("%d:%02d", minutes, seconds);
     }
 
     private void connect(Guild guild, VoiceChannel voiceChannel, GuildMusicManager musicManager) {

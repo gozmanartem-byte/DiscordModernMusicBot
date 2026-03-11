@@ -1,7 +1,5 @@
 package com.artem.musicbot;
 
-import net.dv8tion.jda.api.components.actionrow.ActionRow;
-import net.dv8tion.jda.api.components.buttons.Button;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
@@ -82,22 +80,7 @@ public class CommandListener extends ListenerAdapter {
             case "normal", "reset" -> musicController.resetNormal(channel);
             case "earrape" -> channel.sendMessage("I can't add an earrape mode. Use " + prefix + "volume and " + prefix + "bass instead.").queue();
             case "queue" -> musicController.queue(channel);
-            case "player", "panel" -> {
-                channel.sendMessage("**" + i18n.t("player.title") + "**\n" + i18n.t("player.hint", prefix))
-                    .addComponents(ActionRow.of(
-                                Button.secondary("player:pause", i18n.t("player.pause")),
-                                Button.success("player:resume", i18n.t("player.resume")),
-                                Button.primary("player:skip", i18n.t("player.skip")),
-                                Button.danger("player:stop", i18n.t("player.stop"))
-                    ))
-                    .addComponents(ActionRow.of(
-                                Button.primary("player:queue", i18n.t("player.queue")),
-                                Button.secondary("player:voldown", i18n.t("player.voldown")),
-                                Button.secondary("player:volup", i18n.t("player.volup"))
-                    ))
-                        .queue();
-                channel.sendMessage(i18n.t("player.posted")).queue();
-            }
+            case "player", "panel" -> musicController.sendPlayerPanel(channel, prefix);
             case "debugaudio", "dbg" -> musicController.debugAudio(channel);
             case "help" -> channel.sendMessage(helpText()).queue();
             default -> {
@@ -124,11 +107,13 @@ public class CommandListener extends ListenerAdapter {
             case "player:queue" -> musicController.queue(channel);
             case "player:volup" -> musicController.adjustVolume(channel, 10);
             case "player:voldown" -> musicController.adjustVolume(channel, -10);
+            case "player:refresh" -> {
+            }
             default -> {
             }
         }
 
-        event.deferEdit().queue();
+        event.deferEdit().queue(ignored -> musicController.refreshPlayerPanel(event.getMessage(), prefix));
     }
 
     private Integer parseInt(String value) {
