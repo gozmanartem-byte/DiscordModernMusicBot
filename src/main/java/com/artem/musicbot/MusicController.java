@@ -4,6 +4,7 @@ import java.awt.Color;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.sedmelluq.discord.lavaplayer.filter.equalizer.EqualizerFactory;
@@ -52,6 +53,8 @@ public class MusicController {
     private final Map<String, PendingSearch> pendingSearches = new ConcurrentHashMap<>();
     private final Map<Long, Long> playerPanelMessageIds = new ConcurrentHashMap<>();
     private final Map<Long, Long> playerPanelChannelIds = new ConcurrentHashMap<>();
+    private final Map<Long, AtomicBoolean> playerPanelRefreshInFlight = new ConcurrentHashMap<>();
+    private final Map<Long, AtomicBoolean> playerPanelRefreshPending = new ConcurrentHashMap<>();
 
     public MusicController(BotConfig config, I18n i18n, GuildSettingsStore settingsStore) {
         this.i18n = i18n;
@@ -99,7 +102,11 @@ public class MusicController {
                 musicManager.scheduler.queue(track);
                 lastTrackQueries.put(channel.getGuild().getIdLong(), track.getInfo().title);
                 loadSuccessCount.incrementAndGet();
-                channel.sendMessage("Queued: " + track.getInfo().title).queue();
+                channel.sendMessage("Queued: " + track.getInfo().title).queue(
+                    ignored -> refreshPersistentPlayerPanel(channel.getGuild()),
+                    ignored -> {
+                    }
+                );
             }
 
             @Override
@@ -123,7 +130,11 @@ public class MusicController {
                 musicManager.scheduler.queue(track);
                 lastTrackQueries.put(channel.getGuild().getIdLong(), track.getInfo().title);
                 loadSuccessCount.incrementAndGet();
-                channel.sendMessage("Queued from playlist: " + track.getInfo().title).queue();
+                channel.sendMessage("Queued from playlist: " + track.getInfo().title).queue(
+                    ignored -> refreshPersistentPlayerPanel(channel.getGuild()),
+                    ignored -> {
+                    }
+                );
             }
 
             @Override
@@ -163,7 +174,11 @@ public class MusicController {
         musicManager.scheduler.queue(track);
         lastTrackQueries.put(channel.getGuild().getIdLong(), track.getInfo().title);
         loadSuccessCount.incrementAndGet();
-        channel.sendMessage("Queued: " + track.getInfo().title).queue();
+        channel.sendMessage("Queued: " + track.getInfo().title).queue(
+            ignored -> refreshPersistentPlayerPanel(channel.getGuild()),
+            ignored -> {
+            }
+        );
         return SearchSelectionOutcome.success("Selected: " + track.getInfo().title);
     }
 
@@ -614,6 +629,36 @@ public class MusicController {
     }
 
     private void repostPlayerPanel(TextChannel channel, String prefix) {
+        playerPanelChannelIds.put(channel.getGuild().getIdLong(), channel.getIdLong());
+        enqueuePlayerPanelRepost(channel.getGuild(), prefix);
+    }
+
+    private void enqueuePlayerPanelRepost(Guild guild, String prefix) {
+        long guildId = guild.getIdLong();
+        AtomicBoolean inFlight = playerPanelRefreshInFlight.computeIfAbsent(guildId, ignored -> new AtomicBoolean(false));
+        AtomicBoolean pending = playerPanelRefreshPending.computeIfAbsent(guildId, ignored -> new AtomicBoolean(false));
+
+        if (!inFlight.compareAndSet(false, true)) {
+            pending.set(true);
+            return;
+        }
+
+        TextChannel channel = resolvePlayerPanelChannel(guild);
+        if (channel == null) {
+            inFlight.set(false);
+            return;
+        }
+
+        performPlayerPanelRepost(guild, channel, prefix, inFlight, pending);
+    }
+
+    private void performPlayerPanelRepost(
+            Guild guild,
+            TextChannel channel,
+            String prefix,
+            AtomicBoolean inFlight,
+            AtomicBoolean pending
+    ) {
         long guildId = channel.getGuild().getIdLong();
         deleteTrackedPlayerPanel(channel.getGuild(), guildId);
 
@@ -622,7 +667,28 @@ public class MusicController {
                 .queue(message -> {
                     playerPanelChannelIds.put(guildId, channel.getIdLong());
                     playerPanelMessageIds.put(guildId, message.getIdLong());
-                });
+                    finishPlayerPanelRepost(guild, inFlight, pending);
+                }, ignored -> finishPlayerPanelRepost(guild, inFlight, pending));
+    }
+
+    private void finishPlayerPanelRepost(Guild guild, AtomicBoolean inFlight, AtomicBoolean pending) {
+        inFlight.set(false);
+        if (!pending.getAndSet(false)) {
+            return;
+        }
+
+        if (!inFlight.compareAndSet(false, true)) {
+            return;
+        }
+
+        TextChannel nextChannel = resolvePlayerPanelChannel(guild);
+        if (nextChannel == null) {
+            inFlight.set(false);
+            return;
+        }
+
+        String prefix = settingsStore.get(guild.getIdLong()).prefix();
+        performPlayerPanelRepost(guild, nextChannel, prefix, inFlight, pending);
     }
 
     private void refreshPersistentPlayerPanel(Guild guild) {
