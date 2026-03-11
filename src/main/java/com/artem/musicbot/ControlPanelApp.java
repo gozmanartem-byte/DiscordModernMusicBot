@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -79,6 +80,7 @@ public class ControlPanelApp {
     private JButton skipButton;
     private JButton stopPlaybackButton;
     private JButton refreshDesktopButton;
+    private JButton launchPlayerButton;
     private JTextArea playerSummaryArea;
     private Timer desktopRefreshTimer;
 
@@ -159,8 +161,14 @@ public class ControlPanelApp {
         frame.add(centerPanel, BorderLayout.CENTER);
         frame.add(scrollPane, BorderLayout.SOUTH);
 
-        scrollPane.setPreferredSize(new Dimension(760, 320));
-        frame.setMinimumSize(new Dimension(900, isDesktopOnboardingEnabled() ? 760 : 560));
+        scrollPane.setPreferredSize(new Dimension(900, 180));
+        if (isDesktopOnboardingEnabled()) {
+            frame.setSize(1024, 860);
+            frame.setMinimumSize(new Dimension(980, 800));
+        } else {
+            frame.setSize(900, 620);
+            frame.setMinimumSize(new Dimension(860, 560));
+        }
 
         loadConfigIntoFields();
         wireActions();
@@ -244,7 +252,24 @@ public class ControlPanelApp {
                 }
 
                 try {
-                    runtime.addSongFromDesktop(guildId, channelId, query);
+                    String enqueueQuery = query;
+                    if (isSearchQuery(query)) {
+                        List<BotRuntime.SearchTrackOptionRef> options = runtime.searchTracksFromDesktop(query, 3);
+                        if (options.isEmpty()) {
+                            SwingUtilities.invokeLater(() -> showError("Nothing found for: " + query));
+                            return;
+                        }
+
+                        int selected = pickSearchResultIndex(query, options);
+                        if (selected < 0) {
+                            log("Desktop search cancelled: " + query);
+                            return;
+                        }
+
+                        enqueueQuery = options.get(selected).uri();
+                    }
+
+                    runtime.addSongFromDesktop(guildId, channelId, enqueueQuery);
                     log("Desktop queued: " + query);
                     SwingUtilities.invokeLater(() -> addSongField.setText(""));
                     refreshPlayerSummaryAsync();
@@ -261,6 +286,22 @@ public class ControlPanelApp {
                 refreshDesktopSelectorsAsync();
                 refreshPlayerSummaryAsync();
             });
+            launchPlayerButton.addActionListener(ignored -> worker.submit(() -> {
+                Long guildId = selectedGuildId();
+                Long channelId = selectedChannelId();
+                if (guildId == null || channelId == null) {
+                    SwingUtilities.invokeLater(() -> showError("Select guild and text channel first."));
+                    return;
+                }
+
+                try {
+                    runtime.launchPlayerPanelFromDesktop(guildId, channelId);
+                    log("Posted player panel to Discord.");
+                    refreshPlayerSummaryAsync();
+                } catch (Exception ex) {
+                    SwingUtilities.invokeLater(() -> showError(ex.getMessage()));
+                }
+            }));
         }
     }
 
@@ -283,7 +324,8 @@ public class ControlPanelApp {
         skipButton = new JButton("Skip");
         stopPlaybackButton = new JButton("Stop");
         refreshDesktopButton = new JButton("Refresh Lists");
-        playerSummaryArea = new JTextArea(5, 40);
+        launchPlayerButton = new JButton("Launch Player in Discord");
+        playerSummaryArea = new JTextArea(16, 58);
         playerSummaryArea.setEditable(false);
         playerSummaryArea.setText("Bot is not running.");
 
@@ -299,6 +341,9 @@ public class ControlPanelApp {
         c.gridx = 2;
         c.weightx = 0;
         panel.add(refreshDesktopButton, c);
+
+        c.gridx = 3;
+        panel.add(launchPlayerButton, c);
 
         c.gridx = 0;
         c.gridy = 1;
@@ -336,6 +381,8 @@ public class ControlPanelApp {
         panel.add(controls, c);
 
         c.gridy = 4;
+        c.weighty = 1.0;
+        c.fill = GridBagConstraints.BOTH;
         panel.add(new JScrollPane(playerSummaryArea), c);
 
         setDesktopControlsEnabled(false);
@@ -355,6 +402,7 @@ public class ControlPanelApp {
         skipButton.setEnabled(enabled);
         stopPlaybackButton.setEnabled(enabled);
         refreshDesktopButton.setEnabled(enabled);
+        launchPlayerButton.setEnabled(enabled);
     }
 
     private void refreshDesktopSelectorsAsync() {
@@ -600,6 +648,51 @@ public class ControlPanelApp {
                 .findFirst()
                 .orElse(LANGUAGE_OPTIONS[0]);
         languageCombo.setSelectedItem(option);
+    }
+
+    private boolean isSearchQuery(String query) {
+        String value = query.trim().toLowerCase();
+        return !(value.startsWith("http://")
+                || value.startsWith("https://")
+                || value.startsWith("www.")
+                || value.startsWith("ytsearch:")
+                || value.startsWith("ytmsearch:")
+                || value.startsWith("scsearch:"));
+    }
+
+    private int pickSearchResultIndex(String query, List<BotRuntime.SearchTrackOptionRef> options) {
+        AtomicInteger selected = new AtomicInteger(-1);
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                String[] items = options.stream()
+                        .map(option -> option.title())
+                        .toArray(String[]::new);
+                String choice = (String) JOptionPane.showInputDialog(
+                        frame,
+                        "Choose a track for: " + query,
+                        "Search Results",
+                        JOptionPane.PLAIN_MESSAGE,
+                        null,
+                        items,
+                        items[0]
+                );
+                if (choice == null) {
+                    selected.set(-1);
+                    return;
+                }
+
+                for (int i = 0; i < items.length; i++) {
+                    if (items[i].equals(choice)) {
+                        selected.set(i);
+                        return;
+                    }
+                }
+            });
+        } catch (Exception ex) {
+            throw new IllegalStateException("Could not show search choices: " + ex.getMessage(), ex);
+        }
+
+        return selected.get();
     }
 
     private record LanguageOption(String label, String code) {

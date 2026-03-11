@@ -148,6 +148,15 @@ public class BotRuntime {
         musicController.enqueueFromControlPanel(channel, query);
     }
 
+    public synchronized List<SearchTrackOptionRef> searchTracksFromDesktop(String query, int limit) {
+        if (musicController == null) {
+            throw new IllegalStateException("Bot is not running.");
+        }
+        return musicController.searchTopTracksForDesktop(query, limit).stream()
+                .map(option -> new SearchTrackOptionRef(option.title(), option.uri()))
+                .toList();
+    }
+
     public synchronized void pauseFromDesktop(long guildId, long channelId) {
         TextChannel channel = requireTextChannel(guildId, channelId);
         musicController.pause(channel);
@@ -166,6 +175,11 @@ public class BotRuntime {
     public synchronized void stopFromDesktop(long guildId, long channelId) {
         TextChannel channel = requireTextChannel(guildId, channelId);
         musicController.stop(channel);
+    }
+
+    public synchronized void launchPlayerPanelFromDesktop(long guildId, long channelId) {
+        TextChannel channel = requireTextChannel(guildId, channelId);
+        musicController.sendPlayerPanelFromDesktop(channel);
     }
 
     public synchronized String playerSummary() {
@@ -220,5 +234,8 @@ public class BotRuntime {
     }
 
     public record ChannelRef(long id, String name) {
+    }
+
+    public record SearchTrackOptionRef(String title, String uri) {
     }
 }

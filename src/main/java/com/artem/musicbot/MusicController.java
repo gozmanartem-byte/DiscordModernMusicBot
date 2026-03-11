@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -69,7 +70,7 @@ public class MusicController {
         this.playerManager = new DefaultAudioPlayerManager();
         this.playerManager.getConfiguration().setOutputFormat(StandardAudioDataFormats.DISCORD_OPUS);
         this.playerManager.getConfiguration().setFrameBufferFactory(
-            (bufferDuration, format, stopping) -> new NonAllocatingAudioFrameBuffer(bufferDuration, format, stopping));
+            (bufferDuration, format, stopping) -> new NonAllocatingAudioFrameBuffer(Math.max(bufferDuration, 1400), format, stopping));
         this.playerManager.setItemLoaderThreadPoolSize(8);
 
         YoutubeAudioSourceManager youtubeSourceManager = new YoutubeAudioSourceManager(true,
@@ -168,9 +169,16 @@ public class MusicController {
 
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         var connectedChannel = channel.getGuild().getAudioManager().getConnectedChannel();
-        if (!(connectedChannel instanceof VoiceChannel voiceChannel)) {
-            channel.sendMessage("Connect the bot to a voice channel first, then add songs from the app.").queue();
-            return;
+        VoiceChannel voiceChannel;
+        if (connectedChannel instanceof VoiceChannel existingVoiceChannel) {
+            voiceChannel = existingVoiceChannel;
+        } else {
+            voiceChannel = resolveDesktopVoiceChannel(channel.getGuild());
+            if (voiceChannel == null) {
+                channel.sendMessage("No active voice channel found. Join a voice channel in Discord first, then add songs from the app.").queue();
+                return;
+            }
+            channel.sendMessage("Desktop auto-connected to voice channel: " + voiceChannel.getName()).queue();
         }
 
         connect(channel.getGuild(), voiceChannel, musicManager);
@@ -226,6 +234,72 @@ public class MusicController {
                 disconnectIfIdle(channel, musicManager);
             }
         });
+    }
+
+    public List<SearchTrackOption> searchTopTracksForDesktop(String query, int limit) {
+        String normalized = normalizeIdentifier(query);
+        if (!isSearchIdentifier(normalized)) {
+            normalized = "ytsearch:" + query.trim();
+        }
+
+        int maxResults = Math.max(1, Math.min(limit, 10));
+        List<SearchTrackOption> results = new ArrayList<>();
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean failed = new AtomicBoolean(false);
+        AtomicLong errorCode = new AtomicLong(0L);
+        final String[] failureMessage = {""};
+
+        playerManager.loadItem(normalized, new AudioLoadResultHandler() {
+            @Override
+            public void trackLoaded(AudioTrack track) {
+                results.add(new SearchTrackOption(track.getInfo().title, track.getInfo().uri));
+                latch.countDown();
+            }
+
+            @Override
+            public void playlistLoaded(AudioPlaylist playlist) {
+                List<AudioTrack> tracks = playlist.getTracks();
+                for (int i = 0; i < tracks.size() && i < maxResults; i++) {
+                    AudioTrack track = tracks.get(i);
+                    results.add(new SearchTrackOption(track.getInfo().title, track.getInfo().uri));
+                }
+                latch.countDown();
+            }
+
+            @Override
+            public void noMatches() {
+                latch.countDown();
+            }
+
+            @Override
+            public void loadFailed(FriendlyException exception) {
+                failed.set(true);
+                errorCode.set(1L);
+                failureMessage[0] = exception.getMessage() == null ? "unknown error" : exception.getMessage();
+                latch.countDown();
+            }
+        });
+
+        try {
+            boolean completed = latch.await(12, TimeUnit.SECONDS);
+            if (!completed) {
+                throw new IllegalStateException("Search timed out. Please try again.");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Search interrupted.");
+        }
+
+        if (failed.get() && errorCode.get() == 1L) {
+            throw new IllegalStateException("Search failed: " + failureMessage[0]);
+        }
+
+        return results;
+    }
+
+    public void sendPlayerPanelFromDesktop(TextChannel channel) {
+        String prefix = settingsStore.get(channel.getGuild().getIdLong()).prefix();
+        sendPlayerPanel(channel, prefix);
     }
 
     public SearchSelectionOutcome chooseSearchResult(TextChannel channel, Member member, String selectionId, int index) {
@@ -1103,6 +1177,21 @@ public class MusicController {
         return null;
     }
 
+    private VoiceChannel resolveDesktopVoiceChannel(Guild guild) {
+        for (VoiceChannel voiceChannel : guild.getVoiceChannels()) {
+            boolean hasHumanMember = voiceChannel.getMembers().stream().anyMatch(member -> !member.getUser().isBot());
+            if (hasHumanMember) {
+                return voiceChannel;
+            }
+        }
+
+        List<VoiceChannel> channels = guild.getVoiceChannels();
+        if (channels.isEmpty()) {
+            return null;
+        }
+        return channels.get(0);
+    }
+
     private String buildLoadFailureMessage(String identifier, FriendlyException exception) {
         String message = exception.getMessage() == null ? "unknown error" : exception.getMessage();
         String lower = (identifier + " " + message).toLowerCase();
@@ -1226,5 +1315,8 @@ public class MusicController {
         public static SearchSelectionOutcome error(String message) {
             return new SearchSelectionOutcome(false, message);
         }
+    }
+
+    public record SearchTrackOption(String title, String uri) {
     }
 }

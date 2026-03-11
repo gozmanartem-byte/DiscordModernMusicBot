@@ -5,7 +5,7 @@
 
     <groupId>com.artem</groupId>
     <artifactId>modern-bot</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <name>ModernMusicBot</name>
 
     <properties>
@@ -89,7 +89,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>com.artem.musicbot.ModernMusicBot</mainClass>
+                            <mainClass>com.artem.musicbot.ControlPanelApp</mainClass>
                         </manifest>
                         <manifestEntries>
                             <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
