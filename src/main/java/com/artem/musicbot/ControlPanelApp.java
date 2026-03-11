@@ -22,6 +22,9 @@ import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
+import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
@@ -73,6 +76,10 @@ public class ControlPanelApp {
         frame = new JFrame("ModernMusicBot Control Panel");
         frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         frame.setLayout(new BorderLayout(10, 10));
+
+        if (isDesktopOnboardingEnabled()) {
+            frame.setJMenuBar(buildMenuBar());
+        }
 
         JPanel top = new JPanel(new GridBagLayout());
         top.setBorder(BorderFactory.createTitledBorder("Settings"));
@@ -242,30 +249,53 @@ public class ControlPanelApp {
     }
 
     private void showFirstLaunchBannerIfNeeded() {
+        if (!isDesktopOnboardingEnabled()) {
+            return;
+        }
+
         try {
             Files.createDirectories(APP_HOME_PATH);
             if (Files.exists(FIRST_LAUNCH_MARKER)) {
                 return;
             }
 
-            String message = String.join("\n",
-                    "Welcome to ModernMusicBot.",
-                    "",
-                    "Before first run, make sure:",
-                    "- You have a Discord bot token (Discord Developer Portal).",
-                    "- The bot is invited with required permissions (voice + messages).",
-                    "- Internet access is available.",
-                    "- This app can write files in its folder (config + database).",
-                    "- Optional for better YouTube reliability: set youtube.poToken and youtube.visitorData.",
-                    "",
-                    "Desktop installers already include Java runtime."
-            );
-
-            JOptionPane.showMessageDialog(frame, message, "First Launch Checklist", JOptionPane.INFORMATION_MESSAGE);
+            showChecklistDialog();
             Files.writeString(FIRST_LAUNCH_MARKER, "shown\n");
         } catch (Exception ex) {
             log("Could not show first-launch banner: " + ex.getMessage());
         }
+    }
+
+    private JMenuBar buildMenuBar() {
+        JMenuBar menuBar = new JMenuBar();
+        JMenu helpMenu = new JMenu("Help");
+        JMenuItem checklistItem = new JMenuItem("First Launch Checklist");
+        checklistItem.addActionListener(e -> showChecklistDialog());
+        helpMenu.add(checklistItem);
+        menuBar.add(helpMenu);
+        return menuBar;
+    }
+
+    private void showChecklistDialog() {
+        String message = String.join("\n",
+                "Welcome to ModernMusicBot.",
+                "",
+                "Before first run, make sure:",
+                "- You have a Discord bot token (Discord Developer Portal).",
+                "- The bot is invited with required permissions (voice + messages).",
+                "- Internet access is available.",
+                "- This app can write files in its folder (config + database).",
+                "- Optional for better YouTube reliability: set youtube.poToken and youtube.visitorData.",
+                "",
+                "Desktop installers already include Java runtime."
+        );
+
+        JOptionPane.showMessageDialog(frame, message, "First Launch Checklist", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private boolean isDesktopOnboardingEnabled() {
+        String osName = System.getProperty("os.name", "").toLowerCase();
+        return osName.contains("mac") || osName.contains("win");
     }
 
     private void log(String message) {
