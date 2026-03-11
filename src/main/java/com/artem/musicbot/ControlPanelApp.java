@@ -34,6 +34,8 @@ import javax.swing.WindowConstants;
 public class ControlPanelApp {
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
     private static final Path CONFIG_PATH = Path.of("ModernMusicBot.properties");
+    private static final Path APP_HOME_PATH = Path.of(System.getProperty("user.home"), ".modernmusicbot");
+    private static final Path FIRST_LAUNCH_MARKER = APP_HOME_PATH.resolve("first-launch-banner-seen.flag");
     private static final LanguageOption[] LANGUAGE_OPTIONS = {
         new LanguageOption("English", "en"),
         new LanguageOption("Russian", "ru"),
@@ -138,6 +140,7 @@ public class ControlPanelApp {
         frame.setLocationRelativeTo(null);
         frame.setVisible(true);
         log("Control panel ready.");
+        showFirstLaunchBannerIfNeeded();
 
         frame.addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
@@ -235,6 +238,33 @@ public class ControlPanelApp {
 
         try (OutputStream out = Files.newOutputStream(CONFIG_PATH)) {
             props.store(out, "ModernMusicBot settings");
+        }
+    }
+
+    private void showFirstLaunchBannerIfNeeded() {
+        try {
+            Files.createDirectories(APP_HOME_PATH);
+            if (Files.exists(FIRST_LAUNCH_MARKER)) {
+                return;
+            }
+
+            String message = String.join("\n",
+                    "Welcome to ModernMusicBot.",
+                    "",
+                    "Before first run, make sure:",
+                    "- You have a Discord bot token (Discord Developer Portal).",
+                    "- The bot is invited with required permissions (voice + messages).",
+                    "- Internet access is available.",
+                    "- This app can write files in its folder (config + database).",
+                    "- Optional for better YouTube reliability: set youtube.poToken and youtube.visitorData.",
+                    "",
+                    "Desktop installers already include Java runtime."
+            );
+
+            JOptionPane.showMessageDialog(frame, message, "First Launch Checklist", JOptionPane.INFORMATION_MESSAGE);
+            Files.writeString(FIRST_LAUNCH_MARKER, "shown\n");
+        } catch (Exception ex) {
+            log("Could not show first-launch banner: " + ex.getMessage());
         }
     }
 
