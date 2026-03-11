@@ -537,8 +537,8 @@ public class MusicController {
                     : i18n.t("player.state.playing");
 
         String trackValue = current == null
-                ? i18n.t("player.none")
-                : current.getInfo().title + "\n`" + formatDuration(current.getPosition()) + " / " + formatDuration(current.getDuration()) + "`";
+            ? i18n.t("player.none")
+            : buildTrackValue(current);
 
         var connectedChannel = guild.getAudioManager().getConnectedChannel();
         String voiceValue = connectedChannel == null ? i18n.t("player.notConnected") : connectedChannel.getName();
@@ -556,6 +556,28 @@ public class MusicController {
                 .addField(i18n.t("player.bass"), String.valueOf(musicManager.getBassLevel()), true)
                 .setFooter(i18n.t("player.footer", prefix))
                 .build();
+    }
+
+    private String buildTrackValue(AudioTrack current) {
+        long position = current.getPosition();
+        long duration = current.getDuration();
+
+        StringBuilder value = new StringBuilder(current.getInfo().title)
+                .append("\n`")
+                .append(formatDuration(position))
+                .append(" / ")
+                .append(formatDuration(duration))
+                .append("`");
+
+        if (duration > 0) {
+            long now = System.currentTimeMillis();
+            long startedEpoch = Math.max(0L, (now - position) / 1000L);
+            long endsEpoch = Math.max(startedEpoch, (now + Math.max(0L, duration - position)) / 1000L);
+            value.append("\nStarted: <t:").append(startedEpoch).append(":R>")
+                    .append(" | Ends: <t:").append(endsEpoch).append(":R>");
+        }
+
+        return value.toString();
     }
 
     private List<MessageTopLevelComponent> playerComponents() {

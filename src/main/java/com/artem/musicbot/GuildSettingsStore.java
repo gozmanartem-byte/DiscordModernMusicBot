@@ -71,7 +71,7 @@ public class GuildSettingsStore {
                 "language TEXT NOT NULL, " +
                 "dj_role_id INTEGER NOT NULL DEFAULT 0, " +
                 "default_volume INTEGER NOT NULL DEFAULT 100, " +
-                "autoplay INTEGER NOT NULL DEFAULT 0, " +
+            "autoplay INTEGER NOT NULL DEFAULT 1, " +
                 "command_channel_id INTEGER NOT NULL DEFAULT 0, " +
                 "blocked_role_id INTEGER NOT NULL DEFAULT 0" +
                 ")";
