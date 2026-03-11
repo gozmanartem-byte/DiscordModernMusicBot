@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,6 +33,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.WindowConstants;
 
 public class ControlPanelApp {
@@ -67,6 +69,17 @@ public class ControlPanelApp {
     private JButton startButton;
     private JButton stopButton;
     private JButton saveButton;
+    private JComboBox<GuildOption> guildCombo;
+    private JComboBox<ChannelOption> channelCombo;
+    private JTextField addSongField;
+    private JButton addSongButton;
+    private JButton pauseButton;
+    private JButton resumeButton;
+    private JButton skipButton;
+    private JButton stopPlaybackButton;
+    private JButton refreshDesktopButton;
+    private JTextArea playerSummaryArea;
+    private Timer desktopRefreshTimer;
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> new ControlPanelApp().show());
@@ -135,12 +148,18 @@ public class ControlPanelApp {
         JScrollPane scrollPane = new JScrollPane(console);
         scrollPane.setBorder(BorderFactory.createTitledBorder("Console"));
 
+        JPanel centerPanel = new JPanel(new BorderLayout(10, 10));
+        centerPanel.add(buttons, BorderLayout.NORTH);
+        if (isDesktopOnboardingEnabled()) {
+            centerPanel.add(buildDesktopPlayerPanel(), BorderLayout.CENTER);
+        }
+
         frame.add(top, BorderLayout.NORTH);
-        frame.add(buttons, BorderLayout.CENTER);
+        frame.add(centerPanel, BorderLayout.CENTER);
         frame.add(scrollPane, BorderLayout.SOUTH);
 
         scrollPane.setPreferredSize(new Dimension(760, 320));
-        frame.setMinimumSize(new Dimension(820, 560));
+        frame.setMinimumSize(new Dimension(900, isDesktopOnboardingEnabled() ? 760 : 560));
 
         loadConfigIntoFields();
         wireActions();
@@ -149,9 +168,18 @@ public class ControlPanelApp {
         log("Control panel ready.");
         showFirstLaunchBannerIfNeeded();
 
+        if (isDesktopOnboardingEnabled()) {
+            desktopRefreshTimer = new Timer(3000, ignored -> refreshPlayerSummaryAsync());
+            desktopRefreshTimer.start();
+            refreshDesktopSelectorsAsync();
+        }
+
         frame.addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
             public void windowClosing(java.awt.event.WindowEvent e) {
+                if (desktopRefreshTimer != null) {
+                    desktopRefreshTimer.stop();
+                }
                 worker.shutdownNow();
                 runtime.stop(ControlPanelApp.this::log);
             }
@@ -178,7 +206,10 @@ public class ControlPanelApp {
                     SwingUtilities.invokeLater(() -> {
                         stopButton.setEnabled(true);
                         startButton.setEnabled(false);
+                        setDesktopControlsEnabled(true);
                     });
+                    refreshDesktopSelectorsAsync();
+                    refreshPlayerSummaryAsync();
                 } catch (Exception ex) {
                     log("Start failed: " + ex.getMessage());
                     SwingUtilities.invokeLater(() -> startButton.setEnabled(true));
@@ -191,8 +222,241 @@ public class ControlPanelApp {
             SwingUtilities.invokeLater(() -> {
                 stopButton.setEnabled(false);
                 startButton.setEnabled(true);
+                setDesktopControlsEnabled(false);
+                if (playerSummaryArea != null) {
+                    playerSummaryArea.setText("Bot is not running.");
+                }
             });
         }));
+
+        if (isDesktopOnboardingEnabled()) {
+            guildCombo.addActionListener(ignored -> refreshChannelsAsync());
+
+            addSongButton.addActionListener(ignored -> worker.submit(() -> {
+                Long guildId = selectedGuildId();
+                Long channelId = selectedChannelId();
+                String query = addSongField.getText().trim();
+                if (guildId == null || channelId == null || query.isBlank()) {
+                    SwingUtilities.invokeLater(() -> showError("Select guild/channel and enter a song or URL."));
+                    return;
+                }
+
+                try {
+                    runtime.addSongFromDesktop(guildId, channelId, query);
+                    log("Desktop queued: " + query);
+                    SwingUtilities.invokeLater(() -> addSongField.setText(""));
+                    refreshPlayerSummaryAsync();
+                } catch (Exception ex) {
+                    SwingUtilities.invokeLater(() -> showError(ex.getMessage()));
+                }
+            }));
+
+            pauseButton.addActionListener(ignored -> desktopControlAsync("pause", BotRuntime::pauseFromDesktop));
+            resumeButton.addActionListener(ignored -> desktopControlAsync("resume", BotRuntime::resumeFromDesktop));
+            skipButton.addActionListener(ignored -> desktopControlAsync("skip", BotRuntime::skipFromDesktop));
+            stopPlaybackButton.addActionListener(ignored -> desktopControlAsync("stop", BotRuntime::stopFromDesktop));
+            refreshDesktopButton.addActionListener(ignored -> {
+                refreshDesktopSelectorsAsync();
+                refreshPlayerSummaryAsync();
+            });
+        }
+    }
+
+    private JPanel buildDesktopPlayerPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createTitledBorder("Host Player (Desktop)"));
+
+        GridBagConstraints c = new GridBagConstraints();
+        c.insets = new Insets(4, 6, 4, 6);
+        c.anchor = GridBagConstraints.WEST;
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.weightx = 1.0;
+
+        guildCombo = new JComboBox<>();
+        channelCombo = new JComboBox<>();
+        addSongField = new JTextField();
+        addSongButton = new JButton("Add Song");
+        pauseButton = new JButton("Pause");
+        resumeButton = new JButton("Resume");
+        skipButton = new JButton("Skip");
+        stopPlaybackButton = new JButton("Stop");
+        refreshDesktopButton = new JButton("Refresh Lists");
+        playerSummaryArea = new JTextArea(5, 40);
+        playerSummaryArea.setEditable(false);
+        playerSummaryArea.setText("Bot is not running.");
+
+        c.gridx = 0;
+        c.gridy = 0;
+        c.weightx = 0;
+        panel.add(new JLabel("Guild:"), c);
+
+        c.gridx = 1;
+        c.weightx = 1;
+        panel.add(guildCombo, c);
+
+        c.gridx = 2;
+        c.weightx = 0;
+        panel.add(refreshDesktopButton, c);
+
+        c.gridx = 0;
+        c.gridy = 1;
+        c.weightx = 0;
+        panel.add(new JLabel("Text channel:"), c);
+
+        c.gridx = 1;
+        c.gridwidth = 2;
+        c.weightx = 1;
+        panel.add(channelCombo, c);
+        c.gridwidth = 1;
+
+        c.gridx = 0;
+        c.gridy = 2;
+        c.weightx = 0;
+        panel.add(new JLabel("Song / URL:"), c);
+
+        c.gridx = 1;
+        c.weightx = 1;
+        panel.add(addSongField, c);
+
+        c.gridx = 2;
+        c.weightx = 0;
+        panel.add(addSongButton, c);
+
+        JPanel controls = new JPanel();
+        controls.add(pauseButton);
+        controls.add(resumeButton);
+        controls.add(skipButton);
+        controls.add(stopPlaybackButton);
+
+        c.gridx = 0;
+        c.gridy = 3;
+        c.gridwidth = 3;
+        panel.add(controls, c);
+
+        c.gridy = 4;
+        panel.add(new JScrollPane(playerSummaryArea), c);
+
+        setDesktopControlsEnabled(false);
+        return panel;
+    }
+
+    private void setDesktopControlsEnabled(boolean enabled) {
+        if (!isDesktopOnboardingEnabled() || guildCombo == null) {
+            return;
+        }
+        guildCombo.setEnabled(enabled);
+        channelCombo.setEnabled(enabled);
+        addSongField.setEnabled(enabled);
+        addSongButton.setEnabled(enabled);
+        pauseButton.setEnabled(enabled);
+        resumeButton.setEnabled(enabled);
+        skipButton.setEnabled(enabled);
+        stopPlaybackButton.setEnabled(enabled);
+        refreshDesktopButton.setEnabled(enabled);
+    }
+
+    private void refreshDesktopSelectorsAsync() {
+        if (!isDesktopOnboardingEnabled()) {
+            return;
+        }
+        worker.submit(() -> {
+            List<BotRuntime.GuildRef> guilds = runtime.guildRefs();
+            SwingUtilities.invokeLater(() -> {
+                GuildOption selected = (GuildOption) guildCombo.getSelectedItem();
+                guildCombo.removeAllItems();
+                for (BotRuntime.GuildRef guild : guilds) {
+                    guildCombo.addItem(new GuildOption(guild.id(), guild.name()));
+                }
+                if (selected != null) {
+                    selectGuildById(selected.id());
+                }
+                refreshChannelsAsync();
+            });
+        });
+    }
+
+    private void refreshChannelsAsync() {
+        if (!isDesktopOnboardingEnabled()) {
+            return;
+        }
+        Long guildId = selectedGuildId();
+        if (guildId == null) {
+            SwingUtilities.invokeLater(() -> channelCombo.removeAllItems());
+            return;
+        }
+
+        worker.submit(() -> {
+            List<BotRuntime.ChannelRef> channels = runtime.textChannelRefs(guildId);
+            SwingUtilities.invokeLater(() -> {
+                ChannelOption selected = (ChannelOption) channelCombo.getSelectedItem();
+                channelCombo.removeAllItems();
+                for (BotRuntime.ChannelRef channel : channels) {
+                    channelCombo.addItem(new ChannelOption(channel.id(), channel.name()));
+                }
+                if (selected != null) {
+                    selectChannelById(selected.id());
+                }
+            });
+        });
+    }
+
+    private void refreshPlayerSummaryAsync() {
+        if (!isDesktopOnboardingEnabled() || playerSummaryArea == null) {
+            return;
+        }
+        worker.submit(() -> {
+            String summary = runtime.playerSummary();
+            SwingUtilities.invokeLater(() -> playerSummaryArea.setText(summary));
+        });
+    }
+
+    private void desktopControlAsync(String actionName, DesktopAction action) {
+        worker.submit(() -> {
+            Long guildId = selectedGuildId();
+            Long channelId = selectedChannelId();
+            if (guildId == null || channelId == null) {
+                SwingUtilities.invokeLater(() -> showError("Select guild and text channel first."));
+                return;
+            }
+
+            try {
+                action.apply(runtime, guildId, channelId);
+                log("Desktop action: " + actionName);
+                refreshPlayerSummaryAsync();
+            } catch (Exception ex) {
+                SwingUtilities.invokeLater(() -> showError(ex.getMessage()));
+            }
+        });
+    }
+
+    private Long selectedGuildId() {
+        GuildOption option = (GuildOption) guildCombo.getSelectedItem();
+        return option == null ? null : option.id();
+    }
+
+    private Long selectedChannelId() {
+        ChannelOption option = (ChannelOption) channelCombo.getSelectedItem();
+        return option == null ? null : option.id();
+    }
+
+    private void selectGuildById(long guildId) {
+        for (int i = 0; i < guildCombo.getItemCount(); i++) {
+            GuildOption option = guildCombo.getItemAt(i);
+            if (option.id() == guildId) {
+                guildCombo.setSelectedIndex(i);
+                return;
+            }
+        }
+    }
+
+    private void selectChannelById(long channelId) {
+        for (int i = 0; i < channelCombo.getItemCount(); i++) {
+            ChannelOption option = channelCombo.getItemAt(i);
+            if (option.id() == channelId) {
+                channelCombo.setSelectedIndex(i);
+                return;
+            }
+        }
     }
 
     private void loadConfigIntoFields() {
@@ -322,6 +586,25 @@ public class ControlPanelApp {
         @Override
         public String toString() {
             return label + " (" + code + ")";
+        }
+    }
+
+    @FunctionalInterface
+    private interface DesktopAction {
+        void apply(BotRuntime runtime, long guildId, long channelId);
+    }
+
+    private record GuildOption(long id, String name) {
+        @Override
+        public String toString() {
+            return name;
+        }
+    }
+
+    private record ChannelOption(long id, String name) {
+        @Override
+        public String toString() {
+            return "#" + name;
         }
     }
 }

@@ -161,6 +161,73 @@ public class MusicController {
         });
     }
 
+    public void enqueueFromControlPanel(TextChannel channel, String identifier) {
+        stopCleanupUntilMillis.remove(channel.getGuild().getIdLong());
+        String resolvedIdentifier = normalizeIdentifier(identifier);
+        lastTextChannels.put(channel.getGuild().getIdLong(), channel);
+
+        GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
+        var connectedChannel = channel.getGuild().getAudioManager().getConnectedChannel();
+        if (!(connectedChannel instanceof VoiceChannel voiceChannel)) {
+            channel.sendMessage("Connect the bot to a voice channel first, then add songs from the app.").queue();
+            return;
+        }
+
+        connect(channel.getGuild(), voiceChannel, musicManager);
+
+        channel.sendMessage("Loading: " + identifier).queue();
+        playerManager.loadItemOrdered(musicManager, resolvedIdentifier, new AudioLoadResultHandler() {
+            @Override
+            public void trackLoaded(AudioTrack track) {
+                musicManager.scheduler.queue(track);
+                lastTrackQueries.put(channel.getGuild().getIdLong(), track.getInfo().title);
+                loadSuccessCount.incrementAndGet();
+                channel.sendMessage("Queued: " + track.getInfo().title).queue(
+                        ignored -> refreshPersistentPlayerPanel(channel.getGuild()),
+                        ignored -> {
+                        }
+                );
+            }
+
+            @Override
+            public void playlistLoaded(AudioPlaylist playlist) {
+                AudioTrack track = playlist.getSelectedTrack();
+                if (track == null && !playlist.getTracks().isEmpty()) {
+                    track = playlist.getTracks().get(0);
+                }
+
+                if (track == null) {
+                    channel.sendMessage("Playlist is empty.").queue();
+                    disconnectIfIdle(channel, musicManager);
+                    return;
+                }
+
+                musicManager.scheduler.queue(track);
+                lastTrackQueries.put(channel.getGuild().getIdLong(), track.getInfo().title);
+                loadSuccessCount.incrementAndGet();
+                channel.sendMessage("Queued: " + track.getInfo().title).queue(
+                        ignored -> refreshPersistentPlayerPanel(channel.getGuild()),
+                        ignored -> {
+                        }
+                );
+            }
+
+            @Override
+            public void noMatches() {
+                noMatchesCount.incrementAndGet();
+                channel.sendMessage("Nothing found for: " + identifier).queue();
+                disconnectIfIdle(channel, musicManager);
+            }
+
+            @Override
+            public void loadFailed(FriendlyException exception) {
+                loadFailureCount.incrementAndGet();
+                channel.sendMessage(buildLoadFailureMessage(identifier, exception)).queue();
+                disconnectIfIdle(channel, musicManager);
+            }
+        });
+    }
+
     public SearchSelectionOutcome chooseSearchResult(TextChannel channel, Member member, String selectionId, int index) {
         PendingSearch pendingSearch = pendingSearches.get(selectionId);
         if (pendingSearch == null) {
