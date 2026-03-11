@@ -565,13 +565,11 @@ public class MusicController {
         long startedEpoch = Math.max(0L, (now - position) / 1000L);
 
         StringBuilder value = new StringBuilder(current.getInfo().title)
-                .append("\n`")
-            .append("Played: <t:")
-            .append(startedEpoch)
-            .append(":R>")
-            .append(" / ")
-            .append(formatDuration(duration))
-                .append("`");
+                .append("\n<t:")
+                .append(startedEpoch)
+                .append(":R>")
+                .append(" / ")
+                .append(formatDuration(duration));
 
         return value.toString();
     }
