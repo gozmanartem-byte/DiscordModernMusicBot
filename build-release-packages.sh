@@ -7,6 +7,20 @@ STAGING_DIR="$ROOT_DIR/dist/staging"
 VERSION="${RELEASE_VERSION:-}"
 JAVA25_HOME_DEFAULT="$HOME/.jdks/jdk-25.0.2+10/Contents/Home"
 
+normalize_version() {
+  local candidate="$1"
+  if [[ "$candidate" == v* ]]; then
+    candidate="${candidate#v}"
+  fi
+
+  if [[ "$candidate" =~ ^[0-9]+(\.[0-9]+){1,3}([.-][0-9A-Za-z]+)?$ ]]; then
+    echo "$candidate"
+    return 0
+  fi
+
+  return 1
+}
+
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "Missing required command: $1" >&2
@@ -59,16 +73,22 @@ build_package() {
 require_command mvn
 require_command zip
 
-if [[ -z "$VERSION" && -n "${GITHUB_REF_NAME:-}" ]]; then
-  VERSION="$GITHUB_REF_NAME"
+if [[ -n "$VERSION" ]]; then
+  VERSION="$(normalize_version "$VERSION" || true)"
 fi
 
-if [[ "$VERSION" == v* ]]; then
-  VERSION="${VERSION#v}"
+if [[ -z "$VERSION" && -n "${GITHUB_REF_NAME:-}" ]]; then
+  VERSION="$(normalize_version "$GITHUB_REF_NAME" || true)"
 fi
 
 if [[ -z "$VERSION" ]]; then
   VERSION="$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version | tail -n 1)"
+  VERSION="$(normalize_version "$VERSION" || true)"
+fi
+
+if [[ -z "$VERSION" ]]; then
+  echo "Could not resolve a valid semantic release version." >&2
+  exit 1
 fi
 
 if [[ -z "${JAVA_HOME:-}" && -x "$JAVA25_HOME_DEFAULT/bin/java" ]]; then
