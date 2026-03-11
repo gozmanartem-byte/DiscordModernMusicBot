@@ -1,6 +1,12 @@
 # DiscordModernMusicBot
 
+![Java 25](https://img.shields.io/badge/Java-25-blue)
+![Maven 3.9+](https://img.shields.io/badge/Maven-3.9%2B-C71A36)
+![Platform macOS](https://img.shields.io/badge/Platform-macOS-lightgrey)
+
 Modern Java Discord music bot built with JDA, Lavaplayer, youtube-source, and JDave voice encryption support.
+
+Simple goal: run a stable Discord music bot locally with one config file and two launcher scripts.
 
 ## Features
 
