@@ -1,6 +1,8 @@
 package com.artem.musicbot;
 
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import net.dv8tion.jda.api.Permission;
 import net.dv8tion.jda.api.entities.Guild;
@@ -17,6 +19,9 @@ import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 
 public class CommandListener extends ListenerAdapter {
+    private static final Pattern CHANNEL_MENTION_PATTERN = Pattern.compile("^<#(\\d+)>$");
+    private static final Pattern ROLE_MENTION_PATTERN = Pattern.compile("^<@&(\\d+)>$");
+
     private final String defaultPrefix;
     private final MusicController musicController;
     private final GuildSettingsStore settingsStore;
@@ -60,6 +65,12 @@ public class CommandListener extends ListenerAdapter {
                                 .addOption(OptionType.STRING, "language", "Language code or name", true),
                         Commands.slash("setdj", "Set DJ role (admins always allowed)")
                                 .addOption(OptionType.ROLE, "role", "Role to require for DJ commands", true),
+                        Commands.slash("setcommandchannel", "Restrict bot commands to one channel (off to disable)")
+                            .addOption(OptionType.CHANNEL, "channel", "Allowed command channel", false)
+                            .addOption(OptionType.BOOLEAN, "off", "Set true to disable restriction", false),
+                        Commands.slash("setblockedrole", "Block one role from using bot commands (off to disable)")
+                            .addOption(OptionType.ROLE, "role", "Role to block", false)
+                            .addOption(OptionType.BOOLEAN, "off", "Set true to disable restriction", false),
                         Commands.slash("health", "Show runtime health summary"),
                         Commands.slash("debugaudio", "Show audio debug details")
                 )
@@ -91,6 +102,10 @@ public class CommandListener extends ListenerAdapter {
         String[] parts = withoutPrefix.split("\\s+", 2);
         String command = parts[0].toLowerCase(Locale.ROOT);
         String argument = parts.length > 1 ? parts[1].trim() : "";
+
+        if (!canUseTextCommands(channel, event.getMember(), settings)) {
+            return;
+        }
 
         switch (command) {
             case "play" -> {
@@ -162,6 +177,8 @@ public class CommandListener extends ListenerAdapter {
             case "setprefix" -> doAdminChecked(channel, event.getMember(), () -> setPrefix(channel, argument, settings));
             case "setlang" -> doAdminChecked(channel, event.getMember(), () -> setLanguage(channel, argument, settings));
             case "setdj" -> channel.sendMessage("Use slash command /setdj to select a role.").queue();
+            case "setcommandchannel" -> doAdminChecked(channel, event.getMember(), () -> setCommandChannel(channel, argument, settings));
+            case "setblockedrole" -> doAdminChecked(channel, event.getMember(), () -> setBlockedRole(channel, argument, settings));
             case "settings" -> channel.sendMessage(formatSettings(settings)).queue();
             case "health" -> channel.sendMessage(musicController.healthSummary()).queue();
             case "help" -> channel.sendMessage(helpText(prefix)).queue();
@@ -180,6 +197,10 @@ public class CommandListener extends ListenerAdapter {
         GuildSettings settings = settingsStore.get(guild.getIdLong());
         Member member = event.getMember();
         String prefix = settings.prefix();
+
+        if (!canUseSlashCommands(event, channel, member, settings)) {
+            return;
+        }
 
         switch (event.getName()) {
             case "play" -> musicController.loadAndPlay(channel, member, event.getOption("query", "", OptionMapping::getAsString));
@@ -220,9 +241,43 @@ public class CommandListener extends ListenerAdapter {
                     event.reply("Role is required.").setEphemeral(true).queue();
                     return;
                 }
-                GuildSettings next = new GuildSettings(settings.guildId(), settings.prefix(), settings.language(), role.getIdLong(), settings.defaultVolume(), settings.autoplay());
+                GuildSettings next = new GuildSettings(settings.guildId(), settings.prefix(), settings.language(), role.getIdLong(), settings.defaultVolume(), settings.autoplay(), settings.commandChannelId(), settings.blockedRoleId());
                 settingsStore.upsert(next);
                 channel.sendMessage("DJ role set to @" + role.getName()).queue();
+            });
+            case "setcommandchannel" -> runAdminSlash(event, member, () -> {
+                boolean disable = event.getOption("off", false, OptionMapping::getAsBoolean);
+                var selected = event.getOption("channel", null, OptionMapping::getAsChannel);
+                if (disable) {
+                    GuildSettings next = new GuildSettings(settings.guildId(), settings.prefix(), settings.language(), settings.djRoleId(), settings.defaultVolume(), settings.autoplay(), 0L, settings.blockedRoleId());
+                    settingsStore.upsert(next);
+                    event.reply("Command-channel restriction disabled.").setEphemeral(true).queue();
+                    return;
+                }
+                if (selected == null || !selected.getType().isMessage()) {
+                    event.reply("Provide a text channel or set off=true.").setEphemeral(true).queue();
+                    return;
+                }
+                GuildSettings next = new GuildSettings(settings.guildId(), settings.prefix(), settings.language(), settings.djRoleId(), settings.defaultVolume(), settings.autoplay(), selected.getIdLong(), settings.blockedRoleId());
+                settingsStore.upsert(next);
+                event.reply("Commands restricted to <#" + selected.getId() + ">.").setEphemeral(true).queue();
+            });
+            case "setblockedrole" -> runAdminSlash(event, member, () -> {
+                boolean disable = event.getOption("off", false, OptionMapping::getAsBoolean);
+                Role selected = event.getOption("role", null, OptionMapping::getAsRole);
+                if (disable) {
+                    GuildSettings next = new GuildSettings(settings.guildId(), settings.prefix(), settings.language(), settings.djRoleId(), settings.defaultVolume(), settings.autoplay(), settings.commandChannelId(), 0L);
+                    settingsStore.upsert(next);
+                    event.reply("Blocked-role restriction disabled.").setEphemeral(true).queue();
+                    return;
+                }
+                if (selected == null) {
+                    event.reply("Provide a role or set off=true.").setEphemeral(true).queue();
+                    return;
+                }
+                GuildSettings next = new GuildSettings(settings.guildId(), settings.prefix(), settings.language(), settings.djRoleId(), settings.defaultVolume(), settings.autoplay(), settings.commandChannelId(), selected.getIdLong());
+                settingsStore.upsert(next);
+                event.reply("Role @" + selected.getName() + " is now blocked from bot commands.").setEphemeral(true).queue();
             });
             case "health" -> channel.sendMessage(musicController.healthSummary()).queue();
             case "debugaudio" -> musicController.debugAudio(channel);
@@ -248,6 +303,10 @@ public class CommandListener extends ListenerAdapter {
         }
 
         GuildSettings settings = settingsStore.get(guild.getIdLong());
+        if (!canUseButtonCommands(event, channel, event.getMember(), settings)) {
+            return;
+        }
+
         switch (event.getComponentId()) {
             case "player:pause" -> doDjChecked(channel, event.getMember(), settings, () -> musicController.pause(channel));
             case "player:resume" -> doDjChecked(channel, event.getMember(), settings, () -> musicController.resume(channel));
@@ -272,16 +331,54 @@ public class CommandListener extends ListenerAdapter {
             return;
         }
 
-        GuildSettings next = new GuildSettings(current.guildId(), trimmed, current.language(), current.djRoleId(), current.defaultVolume(), current.autoplay());
+        GuildSettings next = new GuildSettings(current.guildId(), trimmed, current.language(), current.djRoleId(), current.defaultVolume(), current.autoplay(), current.commandChannelId(), current.blockedRoleId());
         settingsStore.upsert(next);
         channel.sendMessage("Prefix updated to `" + trimmed + "`").queue();
     }
 
     private void setLanguage(TextChannel channel, String languageInput, GuildSettings current) {
         String normalized = I18n.Language.from(languageInput).code();
-        GuildSettings next = new GuildSettings(current.guildId(), current.prefix(), normalized, current.djRoleId(), current.defaultVolume(), current.autoplay());
+        GuildSettings next = new GuildSettings(current.guildId(), current.prefix(), normalized, current.djRoleId(), current.defaultVolume(), current.autoplay(), current.commandChannelId(), current.blockedRoleId());
         settingsStore.upsert(next);
         channel.sendMessage("Language updated to `" + normalized + "`").queue();
+    }
+
+    private void setCommandChannel(TextChannel channel, String argument, GuildSettings current) {
+        if (argument == null || argument.isBlank() || "off".equalsIgnoreCase(argument.trim())) {
+            GuildSettings next = new GuildSettings(current.guildId(), current.prefix(), current.language(), current.djRoleId(), current.defaultVolume(), current.autoplay(), 0L, current.blockedRoleId());
+            settingsStore.upsert(next);
+            channel.sendMessage("Command-channel restriction disabled.").queue();
+            return;
+        }
+
+        Long channelId = parseChannelId(argument);
+        if (channelId == null || channel.getGuild().getTextChannelById(channelId) == null) {
+            channel.sendMessage("Usage: " + current.prefix() + "setcommandchannel <#channel|channelId|off>").queue();
+            return;
+        }
+
+        GuildSettings next = new GuildSettings(current.guildId(), current.prefix(), current.language(), current.djRoleId(), current.defaultVolume(), current.autoplay(), channelId, current.blockedRoleId());
+        settingsStore.upsert(next);
+        channel.sendMessage("Commands are now restricted to <#" + channelId + ">.").queue();
+    }
+
+    private void setBlockedRole(TextChannel channel, String argument, GuildSettings current) {
+        if (argument == null || argument.isBlank() || "off".equalsIgnoreCase(argument.trim())) {
+            GuildSettings next = new GuildSettings(current.guildId(), current.prefix(), current.language(), current.djRoleId(), current.defaultVolume(), current.autoplay(), current.commandChannelId(), 0L);
+            settingsStore.upsert(next);
+            channel.sendMessage("Blocked-role restriction disabled.").queue();
+            return;
+        }
+
+        Long roleId = parseRoleId(argument);
+        if (roleId == null || channel.getGuild().getRoleById(roleId) == null) {
+            channel.sendMessage("Usage: " + current.prefix() + "setblockedrole <@role|roleId|off>").queue();
+            return;
+        }
+
+        GuildSettings next = new GuildSettings(current.guildId(), current.prefix(), current.language(), current.djRoleId(), current.defaultVolume(), current.autoplay(), current.commandChannelId(), roleId);
+        settingsStore.upsert(next);
+        channel.sendMessage("Role <@&" + roleId + "> is now blocked from bot commands.").queue();
     }
 
     private boolean hasDjPermission(Member member, GuildSettings settings) {
@@ -334,12 +431,13 @@ public class CommandListener extends ListenerAdapter {
     }
 
     private Integer parseInt(String value) {
-        if (value == null || value.isBlank()) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.isEmpty()) {
             return null;
         }
 
         try {
-            return Integer.parseInt(value.trim());
+            return Integer.parseInt(normalized);
         } catch (NumberFormatException ignored) {
             return null;
         }
@@ -352,7 +450,9 @@ public class CommandListener extends ListenerAdapter {
                 "language=" + settings.language(),
                 "djRoleId=" + settings.djRoleId(),
                 "defaultVolume=" + settings.defaultVolume(),
-                "autoplay=" + settings.autoplay());
+                "autoplay=" + settings.autoplay(),
+                "commandChannelId=" + settings.commandChannelId(),
+                "blockedRoleId=" + settings.blockedRoleId());
     }
 
     private String helpText(String prefix) {
@@ -377,10 +477,108 @@ public class CommandListener extends ListenerAdapter {
                 prefix + "autoplay <on|off>",
                 prefix + "setprefix <value>",
                 prefix + "setlang <value>",
+                prefix + "setcommandchannel <#channel|channelId|off>",
+                prefix + "setblockedrole <@role|roleId|off>",
                 prefix + "settings",
                 prefix + "player",
                 prefix + "health",
                 prefix + "debugaudio",
                 prefix + "help");
+    }
+
+    private boolean canUseTextCommands(TextChannel channel, Member member, GuildSettings settings) {
+        if (isAdmin(member)) {
+            return true;
+        }
+
+        if (isBlockedByRole(member, settings)) {
+            channel.sendMessage("Your role is blocked from using bot commands.").queue();
+            return false;
+        }
+
+        if (settings.commandChannelId() != 0L && settings.commandChannelId() != channel.getIdLong()) {
+            channel.sendMessage("Commands are restricted to <#" + settings.commandChannelId() + ">.").queue();
+            return false;
+        }
+
+        return true;
+    }
+
+    private boolean canUseSlashCommands(SlashCommandInteractionEvent event, TextChannel channel, Member member, GuildSettings settings) {
+        if (isAdmin(member)) {
+            return true;
+        }
+
+        if (isBlockedByRole(member, settings)) {
+            event.reply("Your role is blocked from using bot commands.").setEphemeral(true).queue();
+            return false;
+        }
+
+        if (settings.commandChannelId() != 0L && settings.commandChannelId() != channel.getIdLong()) {
+            event.reply("Commands are restricted to <#" + settings.commandChannelId() + ">.").setEphemeral(true).queue();
+            return false;
+        }
+
+        return true;
+    }
+
+    private boolean canUseButtonCommands(ButtonInteractionEvent event, TextChannel channel, Member member, GuildSettings settings) {
+        if (isAdmin(member)) {
+            return true;
+        }
+
+        if (isBlockedByRole(member, settings)) {
+            event.reply("Your role is blocked from using bot commands.").setEphemeral(true).queue();
+            return false;
+        }
+
+        if (settings.commandChannelId() != 0L && settings.commandChannelId() != channel.getIdLong()) {
+            event.reply("Buttons are restricted to <#" + settings.commandChannelId() + ">.").setEphemeral(true).queue();
+            return false;
+        }
+
+        return true;
+    }
+
+    private boolean isAdmin(Member member) {
+        return member != null && (member.hasPermission(Permission.MANAGE_SERVER) || member.hasPermission(Permission.ADMINISTRATOR));
+    }
+
+    private boolean isBlockedByRole(Member member, GuildSettings settings) {
+        if (member == null || settings.blockedRoleId() == 0L) {
+            return false;
+        }
+        return member.getRoles().stream().anyMatch(role -> role.getIdLong() == settings.blockedRoleId());
+    }
+
+    private Long parseChannelId(String value) {
+        String trimmed = value == null ? "" : value.trim();
+        Matcher mention = CHANNEL_MENTION_PATTERN.matcher(trimmed);
+        if (mention.matches()) {
+            return parseLong(mention.group(1));
+        }
+        return parseLong(trimmed);
+    }
+
+    private Long parseRoleId(String value) {
+        String trimmed = value == null ? "" : value.trim();
+        Matcher mention = ROLE_MENTION_PATTERN.matcher(trimmed);
+        if (mention.matches()) {
+            return parseLong(mention.group(1));
+        }
+        return parseLong(trimmed);
+    }
+
+    private Long parseLong(String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.isEmpty()) {
+            return null;
+        }
+
+        try {
+            return Long.parseLong(normalized);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 }

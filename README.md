@@ -15,7 +15,7 @@ Simple goal: run a stable Discord music bot locally with one config file and lau
 - Audio controls (`volume`, `bass`, `loud`, `normal`)
 - In-chat player panel (`player`) with control buttons
 - Slash commands for major actions (`/play`, `/skip`, `/player`, etc.)
-- Persistent per-server settings (prefix, language, DJ role, autoplay)
+- Persistent per-server settings (prefix, language, DJ role, autoplay, command channel, blocked role)
 - DJ/admin permission checks for sensitive commands
 - Configurable bot language (`bot.language`)
 - Debug command for audio diagnostics (`debugaudio`)
@@ -139,6 +139,12 @@ To build downloadable release zips for macOS, Linux, and Windows:
 
 This creates zip files in `dist/releases/` that you can upload to the GitHub release page as assets.
 
+Version naming behavior:
+
+- Uses `RELEASE_VERSION` when provided.
+- In GitHub release workflow, tag name is used automatically (for example `v1.0.1` -> `1.0.1`).
+- Falls back to Maven `project.version` when no tag/env version is provided.
+
 Current packaged targets:
 
 - macOS
@@ -172,6 +178,8 @@ Text commands use your configured prefix (default `!`).
 - `!player`
 - `!setprefix <value>` (admin)
 - `!setlang <value>` (admin)
+- `!setcommandchannel <#channel|channelId|off>` (admin)
+- `!setblockedrole <@role|roleId|off>` (admin)
 - `!settings`
 - `!health`
 - `!debugaudio`
@@ -181,7 +189,7 @@ Slash commands are also available after startup:
 
 - `/play`, `/skip`, `/pause`, `/resume`, `/stop`, `/queue`, `/player`
 - `/volume`, `/bass`, `/remove`, `/shuffle`, `/clear`, `/loop`, `/seek`, `/autoplay`
-- `/setprefix`, `/setlang`, `/setdj`, `/settings`, `/health`
+- `/setprefix`, `/setlang`, `/setdj`, `/setcommandchannel`, `/setblockedrole`, `/settings`, `/health`
 
 Supported language codes for `bot.language`:
 

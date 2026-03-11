@@ -308,7 +308,9 @@ public class MusicController {
                 current.language(),
                 current.djRoleId(),
                 current.defaultVolume(),
-                enabled
+            enabled,
+            current.commandChannelId(),
+            current.blockedRoleId()
         ));
         channel.sendMessage("Autoplay " + (enabled ? "enabled." : "disabled.")).queue();
     }

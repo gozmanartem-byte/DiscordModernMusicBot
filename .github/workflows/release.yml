@@ -24,6 +24,8 @@ jobs:
           cache: maven
 
       - name: Build and package releases
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           chmod +x ./build-release-packages.sh
           ./build-release-packages.sh

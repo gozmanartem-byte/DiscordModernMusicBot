@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DIST_DIR="$ROOT_DIR/dist/releases"
 STAGING_DIR="$ROOT_DIR/dist/staging"
-VERSION="1.0.0"
+VERSION="${RELEASE_VERSION:-}"
 JAVA25_HOME_DEFAULT="$HOME/.jdks/jdk-25.0.2+10/Contents/Home"
 
 require_command() {
@@ -58,6 +58,18 @@ build_package() {
 
 require_command mvn
 require_command zip
+
+if [[ -z "$VERSION" && -n "${GITHUB_REF_NAME:-}" ]]; then
+  VERSION="$GITHUB_REF_NAME"
+fi
+
+if [[ "$VERSION" == v* ]]; then
+  VERSION="${VERSION#v}"
+fi
+
+if [[ -z "$VERSION" ]]; then
+  VERSION="$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version | tail -n 1)"
+fi
 
 if [[ -z "${JAVA_HOME:-}" && -x "$JAVA25_HOME_DEFAULT/bin/java" ]]; then
   export JAVA_HOME="$JAVA25_HOME_DEFAULT"
