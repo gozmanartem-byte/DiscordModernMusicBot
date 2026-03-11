@@ -13,6 +13,8 @@ Simple goal: run a stable Discord music bot locally with one config file and lau
 - Plays music from URL or search query
 - Queue management (`play`, `skip`, `stop`, `leave`)
 - Audio controls (`volume`, `bass`, `loud`, `normal`)
+- In-chat player panel (`player`) with control buttons
+- Configurable bot language (`bot.language`)
 - Debug command for audio diagnostics (`debugaudio`)
 - Launcher scripts for macOS, Linux, and Windows
 
@@ -63,6 +65,7 @@ cp ModernMusicBot.properties.example ModernMusicBot.properties
 ```properties
 bot.token=YOUR_DISCORD_BOT_TOKEN
 bot.prefix=!
+bot.language=en
 ```
 
 ### Easiest Option (Control Panel)
@@ -155,8 +158,26 @@ Current packaged targets:
 - `!loud`
 - `!normal`
 - `!queue`
+- `!player`
 - `!debugaudio`
 - `!help`
+
+Supported language codes for `bot.language`:
+
+- `en` (English)
+- `ru` (Russian)
+- `hy` (Armenian)
+- `ka` (Georgian)
+- `az` (Azerbaijani)
+- `kk` (Kazakh)
+- `uz` (Uzbek)
+- `uk` (Ukrainian)
+- `de` (German)
+- `es` (Spanish)
+- `it` (Italian)
+- `pt` (Portuguese)
+- `zh` (Chinese)
+- `ja` (Japanese)
 
 ## Security
 

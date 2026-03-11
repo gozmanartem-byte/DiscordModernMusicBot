@@ -31,8 +31,10 @@ public class MusicController {
 
     private final AudioPlayerManager playerManager;
     private final Map<Long, GuildMusicManager> musicManagers = new ConcurrentHashMap<>();
+    private final I18n i18n;
 
-    public MusicController(BotConfig config) {
+    public MusicController(BotConfig config, I18n i18n) {
+        this.i18n = i18n;
         this.playerManager = new DefaultAudioPlayerManager();
         this.playerManager.getConfiguration().setOutputFormat(StandardAudioDataFormats.DISCORD_OPUS);
         this.playerManager.setItemLoaderThreadPoolSize(8);
@@ -166,6 +168,14 @@ public class MusicController {
         channel.sendMessage("Volume set to " + volume + "%.").queue();
     }
 
+    public void adjustVolume(TextChannel channel, int delta) {
+        GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
+        int current = musicManager.player.getVolume();
+        int next = Math.max(0, Math.min(MAX_VOLUME, current + delta));
+        musicManager.player.setVolume(next);
+        channel.sendMessage("Volume set to " + next + "%.").queue();
+    }
+
     public void showVolume(TextChannel channel) {
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         channel.sendMessage("Current volume: " + musicManager.player.getVolume() + "%.").queue();
@@ -194,11 +204,11 @@ public class MusicController {
         channel.sendMessage("Audio reset to normal (volume 100%, bass 0)." ).queue();
     }
 
-    public void setLoudPreset(TextChannel channel) {
+    public void setLoudPreset(TextChannel channel, String prefix) {
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         musicManager.player.setVolume(MAX_VOLUME);
         applyBassBoost(musicManager, MAX_BASS);
-        channel.sendMessage("Loud preset enabled (volume 200%, bass 5). Use !normal to reset.").queue();
+        channel.sendMessage("Loud preset enabled (volume 200%, bass 5). Use " + prefix + "normal to reset.").queue();
     }
 
     public void queue(TextChannel channel) {
@@ -211,7 +221,7 @@ public class MusicController {
         if (musicManager.scheduler.getQueue().isEmpty()) {
             builder.append("Queue is empty.");
         } else {
-            builder.append("Upcoming:\n");
+            builder.append("Upcoming:").append('\n');
             int index = 1;
             for (AudioTrack track : musicManager.scheduler.getQueue()) {
                 builder.append(index++).append(". ").append(track.getInfo().title).append('\n');
@@ -307,9 +317,9 @@ public class MusicController {
         }
 
         if (title == null || title.isBlank()) {
-            guild.getJDA().getPresence().setActivity(Activity.playing("Ждёт музыку"));
+            guild.getJDA().getPresence().setActivity(Activity.playing(i18n.t("status.waiting")));
         } else {
-            guild.getJDA().getPresence().setActivity(Activity.playing("Поёт " + title));
+            guild.getJDA().getPresence().setActivity(Activity.playing(i18n.t("status.playing", title)));
         }
     }
 

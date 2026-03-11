@@ -1,5 +1,6 @@
 bot.token=PASTE_NEW_BOT_TOKEN_HERE
 bot.prefix=!
+bot.language=en
 # Optional YouTube WEB poToken pair if YouTube starts blocking requests again
 youtube.poToken=
 youtube.visitorData=

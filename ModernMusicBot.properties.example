@@ -3,6 +3,7 @@
 
 bot.token=PASTE_BOT_TOKEN_HERE
 bot.prefix=!
+bot.language=en
 
 # Optional: YouTube anti-bot fields (leave empty if not needed)
 youtube.poToken=

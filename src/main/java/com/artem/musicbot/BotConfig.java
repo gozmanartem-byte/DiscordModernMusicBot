@@ -8,7 +8,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Properties;
 
-public record BotConfig(String token, String prefix, String youtubePoToken, String youtubeVisitorData) {
+public record BotConfig(String token, String prefix, String youtubePoToken, String youtubeVisitorData, String languageCode) {
     public static BotConfig load(Path path) throws IOException {
         if (looksLikeLegacyConfig(path)) {
             return loadLegacy(path);
@@ -23,7 +23,8 @@ public record BotConfig(String token, String prefix, String youtubePoToken, Stri
         String prefix = properties.getProperty("bot.prefix", "!").trim();
         String youtubePoToken = properties.getProperty("youtube.poToken", "").trim();
         String youtubeVisitorData = properties.getProperty("youtube.visitorData", "").trim();
-        return new BotConfig(token, prefix, youtubePoToken, youtubeVisitorData);
+        String languageCode = properties.getProperty("bot.language", "en").trim();
+        return new BotConfig(token, prefix, youtubePoToken, youtubeVisitorData, languageCode);
     }
 
     private static boolean looksLikeLegacyConfig(Path path) {
@@ -56,7 +57,8 @@ public record BotConfig(String token, String prefix, String youtubePoToken, Stri
             prefix = "!";
         }
 
-        return new BotConfig(token, prefix, "", "");
+        String languageCode = properties.getProperty("language", "en").trim();
+        return new BotConfig(token, prefix, "", "", languageCode);
     }
 
     private static String stripInlineComment(String value) {

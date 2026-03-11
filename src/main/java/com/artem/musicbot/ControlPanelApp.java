@@ -39,6 +39,7 @@ public class ControlPanelApp {
     private JFrame frame;
     private JPasswordField tokenField;
     private JTextField prefixField;
+    private JTextField languageField;
     private JTextArea console;
     private JButton startButton;
     private JButton stopButton;
@@ -81,6 +82,16 @@ public class ControlPanelApp {
         c.gridx = 1;
         c.weightx = 1.0;
         top.add(prefixField, c);
+
+        c.gridx = 0;
+        c.gridy = 2;
+        c.weightx = 0;
+        top.add(new JLabel("Language code:"), c);
+
+        languageField = new JTextField("en");
+        c.gridx = 1;
+        c.weightx = 1.0;
+        top.add(languageField, c);
 
         JPanel buttons = new JPanel();
         startButton = new JButton("Start");
@@ -171,11 +182,13 @@ public class ControlPanelApp {
 
         tokenField.setText(props.getProperty("bot.token", ""));
         prefixField.setText(props.getProperty("bot.prefix", "!"));
+        languageField.setText(props.getProperty("bot.language", "en"));
     }
 
     private void saveConfigFromFields() throws IOException {
         String token = new String(tokenField.getPassword()).trim();
         String prefix = prefixField.getText().trim();
+        String language = languageField.getText().trim();
 
         if (token.isEmpty()) {
             throw new IllegalStateException("Token cannot be empty.");
@@ -184,6 +197,11 @@ public class ControlPanelApp {
         if (prefix.isEmpty()) {
             prefix = "!";
             prefixField.setText(prefix);
+        }
+
+        if (language.isEmpty()) {
+            language = "en";
+            languageField.setText(language);
         }
 
         Properties props = new Properties();
@@ -195,6 +213,7 @@ public class ControlPanelApp {
 
         props.setProperty("bot.token", token);
         props.setProperty("bot.prefix", prefix);
+        props.setProperty("bot.language", language);
         props.putIfAbsent("youtube.poToken", "");
         props.putIfAbsent("youtube.visitorData", "");
 

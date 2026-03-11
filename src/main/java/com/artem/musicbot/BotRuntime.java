@@ -28,12 +28,13 @@ public class BotRuntime {
         }
 
         BotConfig config = BotConfig.load(configPath);
+        I18n i18n = new I18n(config.languageCode());
 
         AudioModuleConfig audioModuleConfig = new AudioModuleConfig()
             .withDaveSessionFactory(new JDaveSessionFactory())
             .withAudioSendFactory(new DefaultSendFactory());
 
-        MusicController musicController = new MusicController(config);
+        MusicController musicController = new MusicController(config, i18n);
 
         JDA built = JDABuilder.createDefault(config.token(), EnumSet.of(
                 GatewayIntent.GUILD_MESSAGES,
@@ -45,10 +46,10 @@ public class BotRuntime {
                 CacheFlag.SCHEDULED_EVENTS)
             .enableCache(CacheFlag.VOICE_STATE)
             .setMemberCachePolicy(MemberCachePolicy.VOICE)
-            .setActivity(Activity.playing("Ждёт музыку"))
+            .setActivity(Activity.playing(i18n.t("status.waiting")))
             .setStatus(OnlineStatus.ONLINE)
             .setAudioModuleConfig(audioModuleConfig)
-            .addEventListeners(new CommandListener(config.prefix(), musicController))
+            .addEventListeners(new CommandListener(config.prefix(), musicController, i18n))
             .build();
 
         if (waitUntilReady) {

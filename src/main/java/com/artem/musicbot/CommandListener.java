@@ -1,16 +1,21 @@
 package com.artem.musicbot;
 
+import net.dv8tion.jda.api.components.actionrow.ActionRow;
+import net.dv8tion.jda.api.components.buttons.Button;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
+import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 
 public class CommandListener extends ListenerAdapter {
     private final String prefix;
     private final MusicController musicController;
+    private final I18n i18n;
 
-    public CommandListener(String prefix, MusicController musicController) {
+    public CommandListener(String prefix, MusicController musicController, I18n i18n) {
         this.prefix = prefix;
         this.musicController = musicController;
+        this.i18n = i18n;
     }
 
     @Override
@@ -73,15 +78,57 @@ public class CommandListener extends ListenerAdapter {
                     }
                 }
             }
-            case "loud" -> musicController.setLoudPreset(channel);
+            case "loud" -> musicController.setLoudPreset(channel, prefix);
             case "normal", "reset" -> musicController.resetNormal(channel);
             case "earrape" -> channel.sendMessage("I can't add an earrape mode. Use " + prefix + "volume and " + prefix + "bass instead.").queue();
             case "queue" -> musicController.queue(channel);
+            case "player", "panel" -> {
+                channel.sendMessage("**" + i18n.t("player.title") + "**\n" + i18n.t("player.hint", prefix))
+                    .addComponents(ActionRow.of(
+                                Button.secondary("player:pause", i18n.t("player.pause")),
+                                Button.success("player:resume", i18n.t("player.resume")),
+                                Button.primary("player:skip", i18n.t("player.skip")),
+                                Button.danger("player:stop", i18n.t("player.stop"))
+                    ))
+                    .addComponents(ActionRow.of(
+                                Button.primary("player:queue", i18n.t("player.queue")),
+                                Button.secondary("player:voldown", i18n.t("player.voldown")),
+                                Button.secondary("player:volup", i18n.t("player.volup"))
+                    ))
+                        .queue();
+                channel.sendMessage(i18n.t("player.posted")).queue();
+            }
             case "debugaudio", "dbg" -> musicController.debugAudio(channel);
             case "help" -> channel.sendMessage(helpText()).queue();
             default -> {
             }
         }
+    }
+
+    @Override
+    public void onButtonInteraction(ButtonInteractionEvent event) {
+        if (!event.isFromGuild() || !event.getComponentId().startsWith("player:")) {
+            return;
+        }
+
+        if (!(event.getChannel() instanceof TextChannel channel)) {
+            event.deferEdit().queue();
+            return;
+        }
+
+        switch (event.getComponentId()) {
+            case "player:pause" -> musicController.pause(channel);
+            case "player:resume" -> musicController.resume(channel);
+            case "player:skip" -> musicController.skip(channel);
+            case "player:stop" -> musicController.stop(channel);
+            case "player:queue" -> musicController.queue(channel);
+            case "player:volup" -> musicController.adjustVolume(channel, 10);
+            case "player:voldown" -> musicController.adjustVolume(channel, -10);
+            default -> {
+            }
+        }
+
+        event.deferEdit().queue();
     }
 
     private Integer parseInt(String value) {
@@ -110,6 +157,7 @@ public class CommandListener extends ListenerAdapter {
                 prefix + "loud",
                 prefix + "normal",
                 prefix + "queue",
+                prefix + "player",
                 prefix + "debugaudio",
                 prefix + "help");
     }
