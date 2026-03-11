@@ -1,0 +1,10 @@
+# Build output
+target/
+
+# Local runtime files
+ModernMusicBot.properties
+application.properties
+modernbot.log
+
+# OS/editor noise
+.DS_Store

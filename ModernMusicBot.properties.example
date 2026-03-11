@@ -1,0 +1,9 @@
+# Copy this file to application.properties and fill your values.
+# Never commit application.properties with a real token.
+
+bot.token=PASTE_BOT_TOKEN_HERE
+bot.prefix=!
+
+# Optional: YouTube anti-bot fields (leave empty if not needed)
+youtube.poToken=
+youtube.visitorData=
