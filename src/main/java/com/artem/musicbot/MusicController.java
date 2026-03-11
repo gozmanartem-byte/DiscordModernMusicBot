@@ -50,6 +50,8 @@ public class MusicController {
     private final AtomicLong noMatchesCount = new AtomicLong();
     private final AtomicLong searchSelectionCounter = new AtomicLong();
     private final Map<String, PendingSearch> pendingSearches = new ConcurrentHashMap<>();
+    private final Map<Long, Long> playerPanelMessageIds = new ConcurrentHashMap<>();
+    private final Map<Long, Long> playerPanelChannelIds = new ConcurrentHashMap<>();
 
     public MusicController(BotConfig config, I18n i18n, GuildSettingsStore settingsStore) {
         this.i18n = i18n;
@@ -192,13 +194,35 @@ public class MusicController {
             queuedTracks += manager.scheduler.getQueue().size();
         }
 
+        String nowPlayingTitle = "none";
+        long nowPlayingPositionMs = 0L;
+        long nowPlayingDurationMs = 0L;
+        String nowPlayingState = "idle";
+
+        for (GuildMusicManager manager : musicManagers.values()) {
+            AudioTrack current = manager.player.getPlayingTrack();
+            if (current == null) {
+                continue;
+            }
+
+            nowPlayingTitle = current.getInfo().title;
+            nowPlayingPositionMs = current.getPosition();
+            nowPlayingDurationMs = current.getDuration();
+            nowPlayingState = manager.player.isPaused() ? "paused" : "playing";
+            break;
+        }
+
         return new MetricsSnapshot(
                 trackedGuilds,
                 activePlayers,
                 queuedTracks,
                 loadSuccessCount.get(),
                 loadFailureCount.get(),
-                noMatchesCount.get()
+                noMatchesCount.get(),
+                nowPlayingTitle,
+                nowPlayingPositionMs,
+                nowPlayingDurationMs,
+                nowPlayingState
         );
     }
 
@@ -210,6 +234,7 @@ public class MusicController {
         } else {
             channel.sendMessage("Skipped. Now playing: " + next.getInfo().title).queue();
         }
+        refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void pause(TextChannel channel) {
@@ -228,6 +253,7 @@ public class MusicController {
 
         musicManager.player.setPaused(true);
         channel.sendMessage("Paused playback.").queue();
+        refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void resume(TextChannel channel) {
@@ -246,6 +272,7 @@ public class MusicController {
 
         musicManager.player.setPaused(false);
         channel.sendMessage("Resumed playback.").queue();
+        refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void stop(TextChannel channel) {
@@ -254,6 +281,7 @@ public class MusicController {
         channel.getGuild().getAudioManager().closeAudioConnection();
         updatePresence(channel.getGuild());
         channel.sendMessage("Stopped playback and left the voice channel.").queue();
+        refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void setVolume(TextChannel channel, int volume) {
@@ -265,6 +293,7 @@ public class MusicController {
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         musicManager.player.setVolume(volume);
         channel.sendMessage("Volume set to " + volume + "%.").queue();
+        refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void adjustVolume(TextChannel channel, int delta) {
@@ -273,6 +302,7 @@ public class MusicController {
         int next = Math.max(0, Math.min(MAX_VOLUME, current + delta));
         musicManager.player.setVolume(next);
         channel.sendMessage("Volume set to " + next + "%.").queue();
+        refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void showVolume(TextChannel channel) {
@@ -289,6 +319,7 @@ public class MusicController {
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         applyBassBoost(musicManager, level);
         channel.sendMessage("Bass boost set to " + level + ".").queue();
+        refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void showBass(TextChannel channel) {
@@ -301,6 +332,7 @@ public class MusicController {
         musicManager.player.setVolume(DEFAULT_VOLUME);
         applyBassBoost(musicManager, 0);
         channel.sendMessage("Audio reset to normal (volume 100%, bass 0)." ).queue();
+        refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void setLoudPreset(TextChannel channel, String prefix) {
@@ -308,6 +340,7 @@ public class MusicController {
         musicManager.player.setVolume(MAX_VOLUME);
         applyBassBoost(musicManager, MAX_BASS);
         channel.sendMessage("Loud preset enabled (volume 200%, bass 5). Use " + prefix + "normal to reset.").queue();
+        refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void queue(TextChannel channel) {
@@ -337,18 +370,21 @@ public class MusicController {
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         boolean removed = musicManager.scheduler.removeAt(index);
         channel.sendMessage(removed ? "Removed track #" + index + " from queue." : "Invalid queue index.").queue();
+        refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void clearQueue(TextChannel channel) {
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         int removed = musicManager.scheduler.clearQueue();
         channel.sendMessage("Cleared " + removed + " queued track(s).").queue();
+        refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void shuffleQueue(TextChannel channel) {
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         int shuffled = musicManager.scheduler.shuffleQueue();
         channel.sendMessage(shuffled == 0 ? "Queue is empty." : "Shuffled " + shuffled + " queued track(s).").queue();
+        refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void setLoop(TextChannel channel, String mode) {
@@ -370,6 +406,7 @@ public class MusicController {
                 channel.sendMessage("Loop mode set to: off.").queue();
             }
         }
+        refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void seek(TextChannel channel, long seconds) {
@@ -381,6 +418,7 @@ public class MusicController {
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         boolean ok = musicManager.scheduler.seekTo(seconds * 1000L);
         channel.sendMessage(ok ? "Seeked to " + seconds + "s." : "Nothing is playing right now.").queue();
+        refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void setAutoplay(TextChannel channel, boolean enabled) {
@@ -392,11 +430,12 @@ public class MusicController {
                 current.language(),
                 current.djRoleId(),
                 current.defaultVolume(),
-            enabled,
-            current.commandChannelId(),
-            current.blockedRoleId()
+                enabled,
+                current.commandChannelId(),
+                current.blockedRoleId()
         ));
         channel.sendMessage("Autoplay " + (enabled ? "enabled." : "disabled.")).queue();
+        refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public String healthSummary() {
@@ -416,15 +455,13 @@ public class MusicController {
     }
 
     public void sendPlayerPanel(TextChannel channel, String prefix) {
-        channel.sendMessageEmbeds(buildPlayerEmbed(channel.getGuild(), prefix))
-                .setComponents(playerComponents())
-                .queue();
+        repostPlayerPanel(channel, prefix);
     }
 
     public void refreshPlayerPanel(Message message, String prefix) {
-        message.editMessageEmbeds(buildPlayerEmbed(message.getGuild(), prefix))
-                .setComponents(playerComponents())
-                .queue();
+        if (message.getChannel() instanceof TextChannel channel) {
+            repostPlayerPanel(channel, prefix);
+        }
     }
 
     public void debugAudio(TextChannel channel) {
@@ -495,10 +532,12 @@ public class MusicController {
                     track -> {
                         updatePresence(guild);
                         lastTrackQueries.put(guild.getIdLong(), track.getInfo().title);
+                        refreshPersistentPlayerPanel(guild);
                     },
                     () -> {
                         updatePresence(guild);
                         maybeAutoplay(guild, musicManagerRef(guild));
+                        refreshPersistentPlayerPanel(guild);
                     }
             );
 
@@ -572,6 +611,61 @@ public class MusicController {
                 .append(formatDuration(duration));
 
         return value.toString();
+    }
+
+    private void repostPlayerPanel(TextChannel channel, String prefix) {
+        long guildId = channel.getGuild().getIdLong();
+        deleteTrackedPlayerPanel(channel.getGuild(), guildId);
+
+        channel.sendMessageEmbeds(buildPlayerEmbed(channel.getGuild(), prefix))
+                .setComponents(playerComponents())
+                .queue(message -> {
+                    playerPanelChannelIds.put(guildId, channel.getIdLong());
+                    playerPanelMessageIds.put(guildId, message.getIdLong());
+                });
+    }
+
+    private void refreshPersistentPlayerPanel(Guild guild) {
+        TextChannel channel = resolvePlayerPanelChannel(guild);
+        if (channel == null) {
+            return;
+        }
+
+        String prefix = settingsStore.get(guild.getIdLong()).prefix();
+        repostPlayerPanel(channel, prefix);
+    }
+
+    private TextChannel resolvePlayerPanelChannel(Guild guild) {
+        long guildId = guild.getIdLong();
+        Long channelId = playerPanelChannelIds.get(guildId);
+        if (channelId != null) {
+            TextChannel tracked = guild.getTextChannelById(channelId);
+            if (tracked != null) {
+                return tracked;
+            }
+        }
+
+        return lastTextChannels.get(guildId);
+    }
+
+    private void deleteTrackedPlayerPanel(Guild guild, long guildId) {
+        Long messageId = playerPanelMessageIds.remove(guildId);
+        Long channelId = playerPanelChannelIds.remove(guildId);
+        if (messageId == null || channelId == null) {
+            return;
+        }
+
+        TextChannel channel = guild.getTextChannelById(channelId);
+        if (channel == null) {
+            return;
+        }
+
+        channel.deleteMessageById(messageId).queue(
+                ignored -> {
+                },
+                ignored -> {
+                }
+        );
     }
 
     private List<MessageTopLevelComponent> playerComponents() {
@@ -809,7 +903,11 @@ public class MusicController {
             int queuedTracks,
             long loadSuccess,
             long loadFailures,
-            long noMatches
+            long noMatches,
+            String nowPlayingTitle,
+            long nowPlayingPositionMs,
+            long nowPlayingDurationMs,
+            String nowPlayingState
     ) {
     }
 

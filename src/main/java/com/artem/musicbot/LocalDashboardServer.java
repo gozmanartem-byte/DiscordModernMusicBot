@@ -101,11 +101,29 @@ public class LocalDashboardServer {
                       <div class="card"><div class="label">No Matches</div><div id="noMatches" class="value">%d</div></div>
                       <div class="card"><div class="label">Uptime</div><div id="uptime" class="value">%s</div></div>
                     </div>
+                                        <div class="card" style="margin-top:12px;">
+                                            <div class="label">Player</div>
+                                            <div id="playerTitle" class="value" style="font-size:20px;">%s</div>
+                                            <div id="playerState" class="mono" style="margin-top:6px; color:var(--muted);">State: %s</div>
+                                            <div id="playerPosition" class="mono" style="margin-top:4px;">Position: %s / %s</div>
+                                        </div>
                     <div class="card" style="margin-top:12px;">
                       <div class="label">Health Summary</div>
                       <pre id="health" class="mono">%s</pre>
                     </div>
                     <script>
+                                            function formatMs(ms) {
+                                                if (!Number.isFinite(ms) || ms <= 0) return '00:00';
+                                                const totalSeconds = Math.floor(ms / 1000);
+                                                const hours = Math.floor(totalSeconds / 3600);
+                                                const minutes = Math.floor((totalSeconds %% 3600) / 60);
+                                                const seconds = totalSeconds %% 60;
+                                                if (hours > 0) {
+                                                    return String(hours).padStart(2, '0') + ':' + String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+                                                }
+                                                return String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+                                            }
+
                       async function refresh() {
                         const r = await fetch('/metrics', {cache: 'no-store'});
                         const m = await r.json();
@@ -117,6 +135,9 @@ public class LocalDashboardServer {
                         document.getElementById('loadFailures').textContent = m.loadFailures;
                         document.getElementById('noMatches').textContent = m.noMatches;
                         document.getElementById('uptime').textContent = m.uptime;
+                                                document.getElementById('playerTitle').textContent = m.nowPlayingTitle;
+                                                document.getElementById('playerState').textContent = 'State: ' + m.nowPlayingState;
+                                                document.getElementById('playerPosition').textContent = 'Position: ' + formatMs(m.nowPlayingPositionMs) + ' / ' + formatMs(m.nowPlayingDurationMs);
                         document.getElementById('health').textContent = m.healthSummary;
                       }
                       setInterval(refresh, 5000);
@@ -133,6 +154,10 @@ public class LocalDashboardServer {
                 snapshot.loadFailures(),
                 snapshot.noMatches(),
                 formatUptime(),
+                escapeHtml(snapshot.nowPlayingTitle()),
+                escapeHtml(snapshot.nowPlayingState()),
+                formatMs(snapshot.nowPlayingPositionMs()),
+                formatMs(snapshot.nowPlayingDurationMs()),
                 escapeHtml(healthSupplier.get())
         );
 
@@ -159,6 +184,10 @@ public class LocalDashboardServer {
                 "\"loadSuccess\":" + metrics.loadSuccess() + "," +
                 "\"loadFailures\":" + metrics.loadFailures() + "," +
                 "\"noMatches\":" + metrics.noMatches() + "," +
+                "\"nowPlayingTitle\":\"" + escapeJson(metrics.nowPlayingTitle()) + "\"," +
+                "\"nowPlayingPositionMs\":" + metrics.nowPlayingPositionMs() + "," +
+                "\"nowPlayingDurationMs\":" + metrics.nowPlayingDurationMs() + "," +
+                "\"nowPlayingState\":\"" + escapeJson(metrics.nowPlayingState()) + "\"," +
                 "\"uptime\":\"" + formatUptime() + "\"," +
                 "\"healthSummary\":\"" + escapeJson(healthSupplier.get()) + "\"" +
                 "}";
@@ -207,5 +236,21 @@ public class LocalDashboardServer {
                 .replace("\"", "\\\"")
                 .replace("\n", "\\n")
                 .replace("\r", "\\r");
+    }
+
+    private static String formatMs(long milliseconds) {
+        if (milliseconds <= 0L) {
+            return "00:00";
+        }
+
+        long totalSeconds = milliseconds / 1000L;
+        long hours = totalSeconds / 3600L;
+        long minutes = (totalSeconds % 3600L) / 60L;
+        long seconds = totalSeconds % 60L;
+
+        if (hours > 0L) {
+            return String.format(Locale.ROOT, "%02d:%02d:%02d", hours, minutes, seconds);
+        }
+        return String.format(Locale.ROOT, "%02d:%02d", minutes, seconds);
     }
 }
