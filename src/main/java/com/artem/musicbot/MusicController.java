@@ -15,6 +15,7 @@ import com.sedmelluq.discord.lavaplayer.source.AudioSourceManagers;
 import com.sedmelluq.discord.lavaplayer.tools.FriendlyException;
 import com.sedmelluq.discord.lavaplayer.track.AudioPlaylist;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
+import com.sedmelluq.discord.lavaplayer.track.playback.NonAllocatingAudioFrameBuffer;
 
 import dev.lavalink.youtube.YoutubeAudioSourceManager;
 import dev.lavalink.youtube.clients.AndroidVr;
@@ -53,6 +54,8 @@ public class MusicController {
         this.settingsStore = settingsStore;
         this.playerManager = new DefaultAudioPlayerManager();
         this.playerManager.getConfiguration().setOutputFormat(StandardAudioDataFormats.DISCORD_OPUS);
+        this.playerManager.getConfiguration().setFrameBufferFactory(
+            (bufferDuration, format, stopping) -> new NonAllocatingAudioFrameBuffer(bufferDuration, format, stopping));
         this.playerManager.setItemLoaderThreadPoolSize(8);
 
         YoutubeAudioSourceManager youtubeSourceManager = new YoutubeAudioSourceManager(true,
