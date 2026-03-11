@@ -358,11 +358,16 @@ public class CommandListener extends ListenerAdapter {
             return;
         }
 
+        boolean refreshPanelAfterAction = true;
+
         switch (event.getComponentId()) {
             case "player:pause" -> doDjChecked(channel, event.getMember(), settings, () -> musicController.pause(channel));
             case "player:resume" -> doDjChecked(channel, event.getMember(), settings, () -> musicController.resume(channel));
             case "player:skip" -> doDjChecked(channel, event.getMember(), settings, () -> musicController.skip(channel));
-            case "player:stop" -> doDjChecked(channel, event.getMember(), settings, () -> musicController.stop(channel));
+            case "player:stop" -> {
+                doDjChecked(channel, event.getMember(), settings, () -> musicController.stop(channel));
+                refreshPanelAfterAction = false;
+            }
             case "player:volup" -> doDjChecked(channel, event.getMember(), settings, () -> musicController.adjustVolume(channel, 10));
             case "player:voldown" -> doDjChecked(channel, event.getMember(), settings, () -> musicController.adjustVolume(channel, -10));
             case "player:bassup" -> doDjChecked(channel, event.getMember(), settings, () -> musicController.adjustBass(channel, 1));
@@ -374,7 +379,11 @@ public class CommandListener extends ListenerAdapter {
             }
         }
 
-        event.deferEdit().queue(ignored -> musicController.refreshPlayerPanel(event.getMessage(), settings.prefix()));
+        if (refreshPanelAfterAction) {
+            event.deferEdit().queue(ignored -> musicController.refreshPlayerPanel(event.getMessage(), settings.prefix()));
+        } else {
+            event.deferEdit().queue();
+        }
     }
 
     private void setPrefix(TextChannel channel, String newPrefix, GuildSettings current) {
