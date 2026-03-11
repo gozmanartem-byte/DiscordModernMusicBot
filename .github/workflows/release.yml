@@ -59,10 +59,14 @@ jobs:
             $version = $version.Substring(1)
           }
           if ([string]::IsNullOrWhiteSpace($version) -or ($version -notmatch '^[0-9]+(\.[0-9]+){1,3}([.-][0-9A-Za-z]+)?$')) {
-            $version = (mvn -q -DforceStdout help:evaluate -Dexpression=project.version | Select-Object -Last 1).Trim()
+            [xml]$pom = Get-Content pom.xml
+            $version = $pom.project.version
             if ($version.StartsWith("v")) {
               $version = $version.Substring(1)
             }
+          }
+          if ([string]::IsNullOrWhiteSpace($version) -or ($version -notmatch '^[0-9]+(\.[0-9]+){1,3}([.-][0-9A-Za-z]+)?$')) {
+            throw "Could not resolve a valid semantic version for Windows installer build."
           }
 
           New-Item -ItemType Directory -Path dist/jpackage/input -Force | Out-Null
