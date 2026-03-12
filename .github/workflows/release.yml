@@ -136,6 +136,7 @@ jobs:
             --type msi `
             --name ModernMusicBot `
             --app-image $appImage `
+            --icon $icoPath `
             --dest dist/releases `
             --app-version $version `
             --vendor "DiscordModernMusicBot" `
@@ -158,6 +159,7 @@ jobs:
             --type exe `
             --name ModernMusicBot `
             --app-image $appImage `
+            --icon $icoPath `
             --dest dist/releases `
             --app-version $version `
             --vendor "DiscordModernMusicBot" `
