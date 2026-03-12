@@ -184,8 +184,7 @@ jobs:
             --dest dist/releases \
             --app-version "$VERSION" \
             --vendor "DiscordModernMusicBot" \
-            --description "ModernMusicBot desktop launcher" \
-            --java-options "--enable-native-access=ALL-UNNAMED"
+            --description "ModernMusicBot desktop launcher"
 
           BUILT_DMG="$(find dist/releases -maxdepth 1 -name 'ModernMusicBot*.dmg' | head -n 1)"
           if [[ -z "$BUILT_DMG" ]]; then
