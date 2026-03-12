@@ -49,7 +49,9 @@ public class MusicController {
     private static final int MAX_VOLUME = 200;
     private static final int MAX_BASS = 5;
     private static final int BULK_DELETE_LIMIT = 100;
-    private static final long PLAYER_PANEL_REFRESH_SECONDS = 2L;
+    private static final long PLAYER_PANEL_REFRESH_TICK_SECONDS = 1L;
+    private static final long PLAYER_PANEL_PLAYING_REFRESH_MS = 5000L;
+    private static final long PLAYER_PANEL_PAUSED_REFRESH_MS = 20000L;
     private static final int MIN_FRAME_BUFFER_MS = 1400;
 
     private final AudioPlayerManager playerManager;
@@ -68,6 +70,7 @@ public class MusicController {
     private final Map<Long, AtomicBoolean> playerPanelRefreshInFlight = new ConcurrentHashMap<>();
     private final Map<Long, AtomicBoolean> playerPanelRefreshPending = new ConcurrentHashMap<>();
     private final Map<Long, ScheduledFuture<?>> playerPanelAutoRefreshTasks = new ConcurrentHashMap<>();
+    private final Map<Long, Long> playerPanelLastAutoRefreshMillis = new ConcurrentHashMap<>();
     private final ScheduledExecutorService playerPanelRefresher = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread thread = new Thread(r, "player-panel-refresher");
         thread.setDaemon(true);
@@ -1043,6 +1046,7 @@ public class MusicController {
         deleteTrackedPlayerPanel(guild, guildId);
         playerPanelRefreshInFlight.remove(guildId);
         playerPanelRefreshPending.remove(guildId);
+        playerPanelLastAutoRefreshMillis.remove(guildId);
         stopPlayerPanelAutoRefresh(guildId);
     }
 
@@ -1066,17 +1070,24 @@ public class MusicController {
                     return;
                 }
 
-                if (manager.player.isPaused()) {
+                long refreshIntervalMs = manager.player.isPaused()
+                        ? PLAYER_PANEL_PAUSED_REFRESH_MS
+                        : PLAYER_PANEL_PLAYING_REFRESH_MS;
+                long now = System.currentTimeMillis();
+                long lastRefresh = playerPanelLastAutoRefreshMillis.getOrDefault(guildId, 0L);
+                if (now - lastRefresh < refreshIntervalMs) {
                     return;
                 }
 
+                playerPanelLastAutoRefreshMillis.put(guildId, now);
                 refreshPersistentPlayerPanel(guild);
-            }, PLAYER_PANEL_REFRESH_SECONDS, PLAYER_PANEL_REFRESH_SECONDS, TimeUnit.SECONDS);
+            }, PLAYER_PANEL_REFRESH_TICK_SECONDS, PLAYER_PANEL_REFRESH_TICK_SECONDS, TimeUnit.SECONDS);
         });
     }
 
     private void stopPlayerPanelAutoRefresh(long guildId) {
         ScheduledFuture<?> task = playerPanelAutoRefreshTasks.remove(guildId);
+        playerPanelLastAutoRefreshMillis.remove(guildId);
         if (task != null) {
             task.cancel(false);
         }
