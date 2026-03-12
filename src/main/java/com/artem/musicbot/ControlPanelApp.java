@@ -86,6 +86,7 @@ public class ControlPanelApp {
     private JButton startButton;
     private JButton stopButton;
     private JButton saveButton;
+    private JButton toggleConsoleButton;
     private JButton clearConsoleButton;
     private JComboBox<GuildOption> guildCombo;
     private JComboBox<ChannelOption> channelCombo;
@@ -107,6 +108,8 @@ public class ControlPanelApp {
     private JButton launchPlayerButton;
     private JList<String> queueList;
     private DefaultListModel<String> queueListModel;
+    private JScrollPane consoleScrollPane;
+    private boolean consoleVisible;
     private Timer desktopRefreshTimer;
     private String controlPanelLanguageCode = "en";
     private Color brandAccent = new Color(52, 120, 214);
@@ -187,23 +190,26 @@ public class ControlPanelApp {
         startButton = new JButton(ui("start"));
         stopButton = new JButton(ui("stop"));
         saveButton = new JButton(ui("saveSettings"));
+        toggleConsoleButton = new JButton();
         clearConsoleButton = new JButton(ui("clearConsole"));
         stylePrimaryButton(startButton);
         styleSecondaryButton(stopButton);
         styleSecondaryButton(saveButton);
+        styleSecondaryButton(toggleConsoleButton);
         styleSecondaryButton(clearConsoleButton);
         stopButton.setEnabled(false);
         buttons.add(startButton);
         buttons.add(stopButton);
         buttons.add(saveButton);
+        buttons.add(toggleConsoleButton);
         buttons.add(clearConsoleButton);
 
         console = new JTextArea();
         console.setEditable(false);
         console.setBackground(new Color(18, 24, 32));
         console.setForeground(new Color(220, 233, 246));
-        JScrollPane scrollPane = new JScrollPane(console);
-        scrollPane.setBorder(BorderFactory.createTitledBorder(ui("console")));
+        consoleScrollPane = new JScrollPane(console);
+        consoleScrollPane.setBorder(BorderFactory.createTitledBorder(ui("console")));
 
         JPanel centerPanel = new JPanel(new BorderLayout(10, 10));
         centerPanel.setBorder(BorderFactory.createEmptyBorder(4, 2, 4, 2));
@@ -214,9 +220,10 @@ public class ControlPanelApp {
 
         frame.add(top, BorderLayout.NORTH);
         frame.add(centerPanel, BorderLayout.CENTER);
-        frame.add(scrollPane, BorderLayout.SOUTH);
+        frame.add(consoleScrollPane, BorderLayout.SOUTH);
 
-        scrollPane.setPreferredSize(new Dimension(900, 180));
+        consoleScrollPane.setPreferredSize(new Dimension(900, 180));
+        setConsoleVisible(false);
         if (isDesktopOnboardingEnabled()) {
             frame.setSize(1024, 860);
             frame.setMinimumSize(new Dimension(980, 800));
@@ -316,6 +323,7 @@ public class ControlPanelApp {
         }));
 
         clearConsoleButton.addActionListener(e -> console.setText(""));
+    toggleConsoleButton.addActionListener(e -> setConsoleVisible(!consoleVisible));
 
         if (isDesktopOnboardingEnabled()) {
             guildCombo.addActionListener(ignored -> refreshChannelsAsync());
@@ -645,6 +653,20 @@ public class ControlPanelApp {
             earRapeToggleButton.setText("EarRape: " + ui(enabled ? "toggleOn" : "toggleOff"));
             earRapeToggleButton.setBackground(enabled ? new Color(192, 57, 43) : new Color(232, 237, 244));
             earRapeToggleButton.setForeground(enabled ? new Color(255, 247, 246) : brandText);
+        }
+    }
+
+    private void setConsoleVisible(boolean visible) {
+        consoleVisible = visible;
+        if (consoleScrollPane != null) {
+            consoleScrollPane.setVisible(visible);
+        }
+        if (toggleConsoleButton != null) {
+            toggleConsoleButton.setText(ui(visible ? "hideConsole" : "showConsole"));
+        }
+        if (frame != null) {
+            frame.revalidate();
+            frame.repaint();
         }
     }
 
@@ -1121,6 +1143,8 @@ public class ControlPanelApp {
             case "start" -> "Start";
             case "stop" -> "Stop";
             case "saveSettings" -> "Save Settings";
+            case "showConsole" -> "Show Console";
+            case "hideConsole" -> "Hide Console";
             case "console" -> "Console";
             case "desktopPlayer" -> "Host Player (Desktop)";
             case "addSong" -> "Add Song";
@@ -1198,6 +1222,8 @@ public class ControlPanelApp {
             case "start" -> "Старт";
             case "stop" -> "Стоп";
             case "saveSettings" -> "Сохранить настройки";
+            case "showConsole" -> "Показать консоль";
+            case "hideConsole" -> "Скрыть консоль";
             case "console" -> "Консоль";
             case "desktopPlayer" -> "Плеер хоста (Desktop)";
             case "addSong" -> "Добавить песню";
