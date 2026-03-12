@@ -734,13 +734,16 @@ public class MusicController {
     }
 
     public void sendPlayerPanel(TextChannel channel, String prefix) {
-        repostPlayerPanel(channel, prefix);
+        refreshOrCreatePlayerPanel(channel, prefix);
         startPlayerPanelAutoRefresh(channel.getGuild());
     }
 
     public void refreshPlayerPanel(Message message, String prefix) {
         if (message.getChannel() instanceof TextChannel channel) {
-            repostPlayerPanel(channel, prefix);
+            long guildId = channel.getGuild().getIdLong();
+            playerPanelChannelIds.put(guildId, channel.getIdLong());
+            playerPanelMessageIds.put(guildId, message.getIdLong());
+            refreshOrCreatePlayerPanel(channel, prefix);
         }
     }
 
@@ -907,12 +910,12 @@ public class MusicController {
                 .toString();
     }
 
-    private void repostPlayerPanel(TextChannel channel, String prefix) {
+    private void refreshOrCreatePlayerPanel(TextChannel channel, String prefix) {
         playerPanelChannelIds.put(channel.getGuild().getIdLong(), channel.getIdLong());
-        enqueuePlayerPanelRepost(channel.getGuild(), prefix);
+        enqueuePlayerPanelRefresh(channel.getGuild(), prefix);
     }
 
-    private void enqueuePlayerPanelRepost(Guild guild, String prefix) {
+    private void enqueuePlayerPanelRefresh(Guild guild, String prefix) {
         long guildId = guild.getIdLong();
         AtomicBoolean inFlight = playerPanelRefreshInFlight.computeIfAbsent(guildId, ignored -> new AtomicBoolean(false));
         AtomicBoolean pending = playerPanelRefreshPending.computeIfAbsent(guildId, ignored -> new AtomicBoolean(false));
@@ -928,10 +931,10 @@ public class MusicController {
             return;
         }
 
-        performPlayerPanelRepost(guild, channel, prefix, inFlight, pending);
+        performPlayerPanelRefresh(guild, channel, prefix, inFlight, pending);
     }
 
-    private void performPlayerPanelRepost(
+    private void performPlayerPanelRefresh(
             Guild guild,
             TextChannel channel,
             String prefix,
@@ -939,18 +942,41 @@ public class MusicController {
             AtomicBoolean pending
     ) {
         long guildId = channel.getGuild().getIdLong();
-        deleteTrackedPlayerPanel(channel.getGuild(), guildId);
+        Long messageId = playerPanelMessageIds.get(guildId);
+        if (messageId != null) {
+            channel.retrieveMessageById(messageId).queue(existing ->
+                    existing.editMessageEmbeds(buildPlayerEmbed(channel.getGuild(), prefix))
+                            .setComponents(playerComponents(guildI18n(channel.getGuild())))
+                            .queue(
+                                    ignored -> finishPlayerPanelRefresh(guild, inFlight, pending),
+                                    ignored -> postNewPlayerPanel(guild, channel, prefix, inFlight, pending)
+                            ),
+                    ignored -> postNewPlayerPanel(guild, channel, prefix, inFlight, pending)
+            );
+            return;
+        }
 
+        postNewPlayerPanel(guild, channel, prefix, inFlight, pending);
+    }
+
+    private void postNewPlayerPanel(
+            Guild guild,
+            TextChannel channel,
+            String prefix,
+            AtomicBoolean inFlight,
+            AtomicBoolean pending
+    ) {
+        long guildId = channel.getGuild().getIdLong();
         channel.sendMessageEmbeds(buildPlayerEmbed(channel.getGuild(), prefix))
             .setComponents(playerComponents(guildI18n(channel.getGuild())))
                 .queue(message -> {
                     playerPanelChannelIds.put(guildId, channel.getIdLong());
                     playerPanelMessageIds.put(guildId, message.getIdLong());
-                    finishPlayerPanelRepost(guild, inFlight, pending);
-                }, ignored -> finishPlayerPanelRepost(guild, inFlight, pending));
+                    finishPlayerPanelRefresh(guild, inFlight, pending);
+                }, ignored -> finishPlayerPanelRefresh(guild, inFlight, pending));
     }
 
-    private void finishPlayerPanelRepost(Guild guild, AtomicBoolean inFlight, AtomicBoolean pending) {
+    private void finishPlayerPanelRefresh(Guild guild, AtomicBoolean inFlight, AtomicBoolean pending) {
         inFlight.set(false);
         if (!pending.getAndSet(false)) {
             return;
@@ -967,7 +993,7 @@ public class MusicController {
         }
 
         String prefix = settingsStore.get(guild.getIdLong()).prefix();
-        performPlayerPanelRepost(guild, nextChannel, prefix, inFlight, pending);
+        performPlayerPanelRefresh(guild, nextChannel, prefix, inFlight, pending);
     }
 
     private void refreshPersistentPlayerPanel(Guild guild) {
@@ -977,7 +1003,7 @@ public class MusicController {
         }
 
         String prefix = settingsStore.get(guild.getIdLong()).prefix();
-        repostPlayerPanel(channel, prefix);
+        refreshOrCreatePlayerPanel(channel, prefix);
     }
 
     private TextChannel resolvePlayerPanelChannel(Guild guild) {
