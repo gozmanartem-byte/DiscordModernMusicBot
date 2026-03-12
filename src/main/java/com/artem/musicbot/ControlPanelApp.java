@@ -3,6 +3,7 @@ package com.artem.musicbot;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Image;
@@ -115,6 +116,7 @@ public class ControlPanelApp {
         frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         frame.setLayout(new BorderLayout(10, 10));
         frame.getContentPane().setBackground(brandBackground);
+        frame.getRootPane().setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
         if (isDesktopOnboardingEnabled()) {
             frame.setJMenuBar(buildMenuBar());
@@ -171,12 +173,12 @@ public class ControlPanelApp {
         c.weightx = 1.0;
         top.add(controlPanelLanguageCombo, c);
 
-        JPanel buttons = new JPanel();
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         startButton = new JButton(ui("start"));
         stopButton = new JButton(ui("stop"));
         saveButton = new JButton(ui("saveSettings"));
-        clearConsoleButton = new JButton("Clear Console");
-        copySummaryButton = new JButton("Copy Summary");
+        clearConsoleButton = new JButton(ui("clearConsole"));
+        copySummaryButton = new JButton(ui("copySummary"));
         stylePrimaryButton(startButton);
         styleSecondaryButton(stopButton);
         styleSecondaryButton(saveButton);
@@ -197,6 +199,7 @@ public class ControlPanelApp {
         scrollPane.setBorder(BorderFactory.createTitledBorder(ui("console")));
 
         JPanel centerPanel = new JPanel(new BorderLayout(10, 10));
+        centerPanel.setBorder(BorderFactory.createEmptyBorder(4, 2, 4, 2));
         centerPanel.add(buttons, BorderLayout.NORTH);
         if (isDesktopOnboardingEnabled()) {
             centerPanel.add(buildDesktopPlayerPanel(), BorderLayout.CENTER);
@@ -495,7 +498,7 @@ public class ControlPanelApp {
         c.weightx = 0;
         panel.add(addSongButton, c);
 
-        JPanel controls = new JPanel();
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         controls.add(pauseButton);
         controls.add(resumeButton);
         controls.add(skipButton);
@@ -638,17 +641,35 @@ public class ControlPanelApp {
     }
 
     private void stylePrimaryButton(JButton button) {
-        button.setBackground(brandAccent);
-        button.setForeground(new Color(247, 251, 255));
-        button.setOpaque(true);
+        if (isMacUi()) {
+            // macOS Aqua can ignore custom backgrounds; use accent text + border for readability.
+            button.setBackground(new Color(245, 249, 255));
+            button.setForeground(brandAccent.darker());
+            button.setBorder(BorderFactory.createLineBorder(brandAccent, 2, true));
+            button.setOpaque(false);
+            button.putClientProperty("JButton.buttonType", "roundRect");
+        } else {
+            button.setBackground(brandAccent);
+            button.setForeground(new Color(247, 251, 255));
+            button.setOpaque(true);
+        }
         button.setFocusPainted(false);
     }
 
     private void styleSecondaryButton(JButton button) {
         button.setBackground(new Color(232, 237, 244));
         button.setForeground(brandText);
-        button.setOpaque(true);
+        if (isMacUi()) {
+            button.setOpaque(false);
+            button.putClientProperty("JButton.buttonType", "roundRect");
+        } else {
+            button.setOpaque(true);
+        }
         button.setFocusPainted(false);
+    }
+
+    private boolean isMacUi() {
+        return System.getProperty("os.name", "").toLowerCase().contains("mac");
     }
 
     private void refreshDesktopSelectorsAsync() {
@@ -987,6 +1008,8 @@ public class ControlPanelApp {
             case "chooseTrackFor" -> "Choose a track for";
             case "searchResults" -> "Search Results";
             case "couldNotShowSearchChoices" -> "Could not show search choices";
+            case "clearConsole" -> "Clear Console";
+            case "copySummary" -> "Copy Summary";
             case "toggleOn" -> "On";
             case "toggleOff" -> "Off";
             default -> key;
@@ -1012,6 +1035,8 @@ public class ControlPanelApp {
             case "skip" -> "Пропуск";
             case "refreshLists" -> "Обновить списки";
             case "launchPlayer" -> "Запустить плеер в Discord";
+            case "clearConsole" -> "Очистить консоль";
+            case "copySummary" -> "Копировать сводку";
             case "botNotRunning" -> "Бот не запущен.";
             case "guild" -> "Сервер";
             case "textChannel" -> "Текстовый канал";
