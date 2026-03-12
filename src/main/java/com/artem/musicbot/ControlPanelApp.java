@@ -320,6 +320,8 @@ public class ControlPanelApp {
                 }
             }));
 
+            addSongField.addActionListener(ignored -> addSongButton.doClick());
+
             pauseButton.addActionListener(ignored -> desktopControlAsync("pause", BotRuntime::pauseFromDesktop));
             resumeButton.addActionListener(ignored -> desktopControlAsync("resume", BotRuntime::resumeFromDesktop));
             skipButton.addActionListener(ignored -> desktopControlAsync("skip", BotRuntime::skipFromDesktop));
