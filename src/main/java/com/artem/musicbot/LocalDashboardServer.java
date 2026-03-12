@@ -111,6 +111,11 @@ public class LocalDashboardServer {
                       <div class="label">Health Summary</div>
                       <pre id="health" class="mono">%s</pre>
                     </div>
+                                        <div class="card" style="margin-top:12px;">
+                                            <div class="label">Queue Preview</div>
+                                            <div id="playerGuild" class="mono" style="margin-bottom:8px; color:var(--muted);">Guild: %s</div>
+                                            <pre id="queuePreview" class="mono">%s</pre>
+                                        </div>
                     <script>
                                             function formatMs(ms) {
                                                 if (!Number.isFinite(ms) || ms <= 0) return '00:00';
@@ -138,6 +143,8 @@ public class LocalDashboardServer {
                                                 document.getElementById('playerTitle').textContent = m.nowPlayingTitle;
                                                 document.getElementById('playerState').textContent = 'State: ' + m.nowPlayingState;
                                                 document.getElementById('playerPosition').textContent = 'Position: ' + formatMs(m.nowPlayingPositionMs) + ' / ' + formatMs(m.nowPlayingDurationMs);
+                                                document.getElementById('playerGuild').textContent = 'Guild: ' + m.nowPlayingGuild;
+                                                document.getElementById('queuePreview').textContent = m.queuePreview;
                         document.getElementById('health').textContent = m.healthSummary;
                       }
                       setInterval(refresh, 5000);
@@ -158,7 +165,9 @@ public class LocalDashboardServer {
                 escapeHtml(snapshot.nowPlayingState()),
                 formatMs(snapshot.nowPlayingPositionMs()),
                 formatMs(snapshot.nowPlayingDurationMs()),
-                escapeHtml(healthSupplier.get())
+                escapeHtml(healthSupplier.get()),
+                escapeHtml(snapshot.nowPlayingGuild()),
+                escapeHtml(snapshot.queuePreview())
         );
 
         byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
@@ -188,6 +197,8 @@ public class LocalDashboardServer {
                 "\"nowPlayingPositionMs\":" + metrics.nowPlayingPositionMs() + "," +
                 "\"nowPlayingDurationMs\":" + metrics.nowPlayingDurationMs() + "," +
                 "\"nowPlayingState\":\"" + escapeJson(metrics.nowPlayingState()) + "\"," +
+                "\"nowPlayingGuild\":\"" + escapeJson(metrics.nowPlayingGuild()) + "\"," +
+                "\"queuePreview\":\"" + escapeJson(metrics.queuePreview()) + "\"," +
                 "\"uptime\":\"" + formatUptime() + "\"," +
                 "\"healthSummary\":\"" + escapeJson(healthSupplier.get()) + "\"" +
                 "}";

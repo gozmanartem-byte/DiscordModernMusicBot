@@ -416,8 +416,19 @@ public class MusicController {
         long nowPlayingPositionMs = 0L;
         long nowPlayingDurationMs = 0L;
         String nowPlayingState = "idle";
+        String nowPlayingGuild = "none";
+        String queuePreview = "(empty)";
+        GuildMusicManager fallbackManager = null;
+        Long fallbackGuildId = null;
 
-        for (GuildMusicManager manager : musicManagers.values()) {
+        for (Map.Entry<Long, GuildMusicManager> entry : musicManagers.entrySet()) {
+            long guildId = entry.getKey();
+            GuildMusicManager manager = entry.getValue();
+            if (fallbackManager == null) {
+                fallbackManager = manager;
+                fallbackGuildId = guildId;
+            }
+
             AudioTrack current = manager.player.getPlayingTrack();
             if (current == null) {
                 continue;
@@ -427,7 +438,14 @@ public class MusicController {
             nowPlayingPositionMs = manager.getCalculatedPositionMs();
             nowPlayingDurationMs = current.getDuration();
             nowPlayingState = manager.player.isPaused() ? "paused" : "playing";
+            nowPlayingGuild = guildDisplayName(guildId);
+            queuePreview = queuePreview(manager);
             break;
+        }
+
+        if ("none".equals(nowPlayingGuild) && fallbackManager != null && fallbackGuildId != null) {
+            nowPlayingGuild = guildDisplayName(fallbackGuildId);
+            queuePreview = queuePreview(fallbackManager);
         }
 
         return new MetricsSnapshot(
@@ -440,8 +458,41 @@ public class MusicController {
                 nowPlayingTitle,
                 nowPlayingPositionMs,
                 nowPlayingDurationMs,
-                nowPlayingState
+                nowPlayingState,
+                nowPlayingGuild,
+                queuePreview
         );
+    }
+
+    private String guildDisplayName(long guildId) {
+        TextChannel channel = lastTextChannels.get(guildId);
+        if (channel != null && channel.getGuild() != null) {
+            return channel.getGuild().getName();
+        }
+        return Long.toString(guildId);
+    }
+
+    private String queuePreview(GuildMusicManager manager) {
+        if (manager == null || manager.scheduler.getQueue().isEmpty()) {
+            return "(empty)";
+        }
+
+        StringBuilder builder = new StringBuilder();
+        int index = 1;
+        for (AudioTrack queued : manager.scheduler.getQueue()) {
+            builder.append(index++)
+                    .append(". ")
+                    .append(queued.getInfo().title)
+                    .append(" [")
+                    .append(formatDuration(queued.getDuration()))
+                    .append("]")
+                    .append('\n');
+            if (index > 5) {
+                builder.append("...");
+                break;
+            }
+        }
+        return builder.toString().trim();
     }
 
     public long preferredTextChannelId(long guildId) {
@@ -1700,7 +1751,9 @@ public class MusicController {
             String nowPlayingTitle,
             long nowPlayingPositionMs,
             long nowPlayingDurationMs,
-            String nowPlayingState
+            String nowPlayingState,
+            String nowPlayingGuild,
+            String queuePreview
     ) {
     }
 
