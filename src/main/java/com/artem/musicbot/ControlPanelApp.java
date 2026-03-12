@@ -88,6 +88,7 @@ public class ControlPanelApp {
     private JComboBox<ChannelOption> channelCombo;
     private JTextField addSongField;
     private JButton addSongButton;
+    private JButton playNextButton;
     private JButton pauseButton;
     private JButton resumeButton;
     private JButton skipButton;
@@ -332,41 +333,8 @@ public class ControlPanelApp {
             guildCombo.addActionListener(ignored -> refreshPlayerSummaryAsync());
             guildCombo.addActionListener(ignored -> setEarRapeEnabled(false));
 
-            addSongButton.addActionListener(ignored -> worker.submit(() -> {
-                Long guildId = selectedGuildId();
-                Long channelId = selectedChannelId();
-                String query = addSongField.getText().trim();
-                if (guildId == null || channelId == null || query.isBlank()) {
-                    SwingUtilities.invokeLater(() -> showError(ui("selectGuildChannelSong")));
-                    return;
-                }
-
-                try {
-                    String enqueueQuery = query;
-                    if (isSearchQuery(query)) {
-                        List<BotRuntime.SearchTrackOptionRef> options = runtime.searchTracksFromDesktop(query, 3);
-                        if (options.isEmpty()) {
-                            SwingUtilities.invokeLater(() -> showError(ui("nothingFound") + ": " + query));
-                            return;
-                        }
-
-                        int selected = pickSearchResultIndex(query, options);
-                        if (selected < 0) {
-                            log(ui("desktopSearchCancelled") + ": " + query);
-                            return;
-                        }
-
-                        enqueueQuery = options.get(selected).uri();
-                    }
-
-                    runtime.addSongFromDesktop(guildId, channelId, enqueueQuery);
-                    log(ui("desktopQueued") + ": " + query);
-                    SwingUtilities.invokeLater(() -> addSongField.setText(""));
-                    refreshPlayerSummaryAsync();
-                } catch (Exception ex) {
-                    SwingUtilities.invokeLater(() -> showError(ex.getMessage()));
-                }
-            }));
+            addSongButton.addActionListener(ignored -> submitDesktopEnqueue(false));
+            playNextButton.addActionListener(ignored -> submitDesktopEnqueue(true));
 
             addSongField.addActionListener(ignored -> addSongButton.doClick());
 
@@ -477,7 +445,9 @@ public class ControlPanelApp {
         channelCombo = new JComboBox<>();
         addSongField = new JTextField();
         addSongButton = new JButton(ui("addSong"));
+        playNextButton = new JButton(ui("playNext"));
         stylePrimaryButton(addSongButton);
+        styleSecondaryButton(playNextButton);
         pauseButton = new JButton(ui("pause"));
         resumeButton = new JButton(ui("resume"));
         skipButton = new JButton(ui("skip"));
@@ -547,6 +517,9 @@ public class ControlPanelApp {
         c.weightx = 0;
         panel.add(addSongButton, c);
 
+        c.gridx = 3;
+        panel.add(playNextButton, c);
+
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         controls.add(pauseButton);
         controls.add(resumeButton);
@@ -582,6 +555,7 @@ public class ControlPanelApp {
         channelCombo.setEnabled(enabled);
         addSongField.setEnabled(enabled);
         addSongButton.setEnabled(enabled);
+        playNextButton.setEnabled(enabled);
         pauseButton.setEnabled(enabled);
         resumeButton.setEnabled(enabled);
         skipButton.setEnabled(enabled);
@@ -811,6 +785,50 @@ public class ControlPanelApp {
         });
     }
 
+    private void submitDesktopEnqueue(boolean playNext) {
+        worker.submit(() -> {
+            Long guildId = selectedGuildId();
+            Long channelId = selectedChannelId();
+            String query = addSongField.getText().trim();
+            if (guildId == null || channelId == null || query.isBlank()) {
+                SwingUtilities.invokeLater(() -> showError(ui("selectGuildChannelSong")));
+                return;
+            }
+
+            try {
+                String enqueueQuery = query;
+                if (isSearchQuery(query)) {
+                    List<BotRuntime.SearchTrackOptionRef> options = runtime.searchTracksFromDesktop(query, 3);
+                    if (options.isEmpty()) {
+                        SwingUtilities.invokeLater(() -> showError(ui("nothingFound") + ": " + query));
+                        return;
+                    }
+
+                    int selected = pickSearchResultIndex(query, options);
+                    if (selected < 0) {
+                        log(ui("desktopSearchCancelled") + ": " + query);
+                        return;
+                    }
+
+                    enqueueQuery = options.get(selected).uri();
+                }
+
+                if (playNext) {
+                    runtime.addSongNextFromDesktop(guildId, channelId, enqueueQuery);
+                    log(ui("desktopQueuedNext") + ": " + query);
+                } else {
+                    runtime.addSongFromDesktop(guildId, channelId, enqueueQuery);
+                    log(ui("desktopQueued") + ": " + query);
+                }
+
+                SwingUtilities.invokeLater(() -> addSongField.setText(""));
+                refreshPlayerSummaryAsync();
+            } catch (Exception ex) {
+                SwingUtilities.invokeLater(() -> showError(ex.getMessage()));
+            }
+        });
+    }
+
     private Long selectedGuildId() {
         GuildOption option = (GuildOption) guildCombo.getSelectedItem();
         return option == null ? null : option.id();
@@ -1026,6 +1044,7 @@ public class ControlPanelApp {
             case "console" -> "Console";
             case "desktopPlayer" -> "Host Player (Desktop)";
             case "addSong" -> "Add Song";
+            case "playNext" -> "Play Next";
             case "pause" -> "Pause";
             case "resume" -> "Resume";
             case "skip" -> "Skip";
@@ -1062,6 +1081,7 @@ public class ControlPanelApp {
             case "javaIncluded" -> "Desktop installers already include Java runtime.";
             case "desktopSearchCancelled" -> "Desktop search cancelled";
             case "desktopQueued" -> "Desktop queued";
+            case "desktopQueuedNext" -> "Queued as next";
             case "playerPanelPosted" -> "Posted player panel to Discord.";
             case "desktopAction" -> "Desktop action";
             case "chooseTrackFor" -> "Choose a track for";
@@ -1095,6 +1115,7 @@ public class ControlPanelApp {
             case "console" -> "Консоль";
             case "desktopPlayer" -> "Плеер хоста (Desktop)";
             case "addSong" -> "Добавить песню";
+            case "playNext" -> "Играть следующей";
             case "pause" -> "Пауза";
             case "resume" -> "Продолжить";
             case "skip" -> "Пропуск";
@@ -1108,6 +1129,7 @@ public class ControlPanelApp {
             case "queueShuffle" -> "Перемешать";
             case "queueClear" -> "Очистить очередь";
             case "queueIndexRequired" -> "Введите корректный номер в очереди (1..n).";
+            case "desktopQueuedNext" -> "Добавлено следующей";
             case "botNotRunning" -> "Бот не запущен.";
             case "guild" -> "Сервер";
             case "textChannel" -> "Текстовый канал";

@@ -184,6 +184,14 @@ public class MusicController {
     }
 
     public void enqueueFromControlPanel(TextChannel channel, String identifier) {
+        enqueueFromControlPanel(channel, identifier, false);
+    }
+
+    public void enqueueNextFromControlPanel(TextChannel channel, String identifier) {
+        enqueueFromControlPanel(channel, identifier, true);
+    }
+
+    private void enqueueFromControlPanel(TextChannel channel, String identifier, boolean playNext) {
         I18n localI18n = guildI18n(channel.getGuild());
         stopCleanupUntilMillis.remove(channel.getGuild().getIdLong());
         String resolvedIdentifier = normalizeIdentifier(identifier);
@@ -210,7 +218,11 @@ public class MusicController {
         playerManager.loadItemOrdered(musicManager, resolvedIdentifier, new AudioLoadResultHandler() {
             @Override
             public void trackLoaded(AudioTrack track) {
-                musicManager.scheduler.queue(track);
+                if (playNext) {
+                    musicManager.scheduler.queueNext(track);
+                } else {
+                    musicManager.scheduler.queue(track);
+                }
                 lastTrackQueries.put(channel.getGuild().getIdLong(), track.getInfo().title);
                 loadSuccessCount.incrementAndGet();
                 channel.sendMessage(localI18n.t("queued", track.getInfo().title)).queue(
@@ -233,7 +245,11 @@ public class MusicController {
                     return;
                 }
 
-                musicManager.scheduler.queue(track);
+                if (playNext) {
+                    musicManager.scheduler.queueNext(track);
+                } else {
+                    musicManager.scheduler.queue(track);
+                }
                 lastTrackQueries.put(channel.getGuild().getIdLong(), track.getInfo().title);
                 loadSuccessCount.incrementAndGet();
                 channel.sendMessage(localI18n.t("queued", track.getInfo().title)).queue(

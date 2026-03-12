@@ -1,17 +1,17 @@
 package com.artem.musicbot;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.function.Consumer;
+
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayer;
 import com.sedmelluq.discord.lavaplayer.player.event.AudioEventAdapter;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrackEndReason;
-
-import java.util.Objects;
-import java.util.Queue;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.function.Consumer;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class TrackScheduler extends AudioEventAdapter {
     private final AudioPlayer player;
@@ -33,6 +33,22 @@ public class TrackScheduler extends AudioEventAdapter {
         } else {
             queue.offer(track);
         }
+    }
+
+    public void queueNext(AudioTrack track) {
+        if (player.getPlayingTrack() == null) {
+            if (player.startTrack(track, true)) {
+                onTrackStart.accept(track);
+            } else {
+                queue.offer(track);
+            }
+            return;
+        }
+
+        List<AudioTrack> tracks = new ArrayList<>(queue);
+        queue.clear();
+        queue.offer(track);
+        queue.addAll(tracks);
     }
 
     public AudioTrack skip() {

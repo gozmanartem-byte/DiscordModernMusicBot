@@ -182,6 +182,17 @@ public class BotRuntime {
         musicController.enqueueFromControlPanel(channel, query);
     }
 
+    public synchronized void addSongNextFromDesktop(long guildId, long channelId, String query) {
+        if (musicController == null) {
+            throw new IllegalStateException("Bot is not running.");
+        }
+        TextChannel channel = resolveTextChannel(guildId, channelId);
+        if (channel == null) {
+            throw new IllegalStateException("Selected text channel is unavailable.");
+        }
+        musicController.enqueueNextFromControlPanel(channel, query);
+    }
+
     public synchronized List<SearchTrackOptionRef> searchTracksFromDesktop(String query, int limit) {
         if (musicController == null) {
             throw new IllegalStateException("Bot is not running.");
