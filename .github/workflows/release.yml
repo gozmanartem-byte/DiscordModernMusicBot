@@ -83,6 +83,36 @@ jobs:
           Copy-Item README_INSTALLATION.md dist/jpackage/input/ -Force
           Copy-Item LICENSE dist/jpackage/input/ -Force
 
+          # Create a Windows .ico from the project PNG so installer/app icon matches macOS branding.
+          $pngIconPath = "src/main/resources/app-icon.png"
+          if (-not (Test-Path $pngIconPath)) {
+            throw "PNG icon not found at $pngIconPath"
+          }
+          $icoPath = "dist/jpackage/ModernMusicBot.ico"
+          $pngBytes = [System.IO.File]::ReadAllBytes($pngIconPath)
+          $fs = [System.IO.File]::Create($icoPath)
+          try {
+            $bw = New-Object System.IO.BinaryWriter($fs)
+            # ICONDIR header
+            $bw.Write([UInt16]0)
+            $bw.Write([UInt16]1)
+            $bw.Write([UInt16]1)
+            # ICONDIRENTRY (1 PNG-based image)
+            $bw.Write([Byte]0)   # width 256 (0 means 256)
+            $bw.Write([Byte]0)   # height 256 (0 means 256)
+            $bw.Write([Byte]0)   # palette
+            $bw.Write([Byte]0)   # reserved
+            $bw.Write([UInt16]1) # color planes
+            $bw.Write([UInt16]32)# bits per pixel
+            $bw.Write([UInt32]$pngBytes.Length)
+            $bw.Write([UInt32]22) # offset to image data
+            $bw.Write($pngBytes)
+            $bw.Flush()
+          }
+          finally {
+            $fs.Dispose()
+          }
+
           # Build app image first, then package installer from it for more stable EXE output.
           jpackage `
             --type app-image `
@@ -90,6 +120,7 @@ jobs:
             --input dist/jpackage/input `
             --main-jar DiscordModernMusicBot.jar `
             --main-class com.artem.musicbot.ControlPanelApp `
+            --icon $icoPath `
             --dest dist/jpackage `
             --app-version $version `
             --vendor "DiscordModernMusicBot" `
