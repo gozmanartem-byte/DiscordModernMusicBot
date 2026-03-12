@@ -22,8 +22,10 @@ import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.imageio.ImageIO;
@@ -453,12 +455,15 @@ public class ControlPanelApp {
                     if (panelExists) {
                         runtime.removePlayerPanelFromDesktop(guildId, channelId);
                         log(ui("playerPanelRemoved"));
+                        setPlayerPanelToggleButtonState(true, false);
                     } else {
                         runtime.launchPlayerPanelFromDesktop(guildId, channelId);
                         log(ui("playerPanelPosted"));
+                        setPlayerPanelToggleButtonState(true, true);
                     }
                     refreshPlayerPanelToggleButtonAsync();
                     refreshPlayerSummaryAsync();
+                    CompletableFuture.delayedExecutor(1, TimeUnit.SECONDS).execute(this::refreshPlayerPanelToggleButtonAsync);
                 } catch (Exception ex) {
                     SwingUtilities.invokeLater(() -> showError(ex.getMessage()));
                 }
