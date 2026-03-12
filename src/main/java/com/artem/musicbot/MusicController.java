@@ -50,7 +50,7 @@ public class MusicController {
     private static final int MAX_BASS = 5;
     private static final int BULK_DELETE_LIMIT = 100;
     private static final long PLAYER_PANEL_REFRESH_TICK_SECONDS = 1L;
-    private static final long PLAYER_PANEL_PLAYING_REFRESH_MS = 5000L;
+    private static final long PLAYER_PANEL_PLAYING_REFRESH_MS = 1000L;
     private static final long PLAYER_PANEL_PAUSED_REFRESH_MS = 20000L;
     private static final int MIN_FRAME_BUFFER_MS = 1400;
 
