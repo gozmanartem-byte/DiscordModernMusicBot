@@ -83,19 +83,36 @@ jobs:
           Copy-Item README_INSTALLATION.md dist/jpackage/input/ -Force
           Copy-Item LICENSE dist/jpackage/input/ -Force
 
+          # Build app image first, then package installer from it for more stable EXE output.
           jpackage `
-            --type exe `
+            --type app-image `
             --name ModernMusicBot `
             --input dist/jpackage/input `
             --main-jar DiscordModernMusicBot.jar `
             --main-class com.artem.musicbot.ControlPanelApp `
+            --dest dist/jpackage `
+            --app-version $version `
+            --vendor "DiscordModernMusicBot" `
+            --description "ModernMusicBot desktop launcher" `
+            --java-options "--enable-native-access=ALL-UNNAMED"
+
+          $appImage = "dist/jpackage/ModernMusicBot"
+          if (-not (Test-Path $appImage)) {
+            throw "Windows app image was not created"
+          }
+
+          jpackage `
+            --type exe `
+            --name ModernMusicBot `
+            --app-image $appImage `
             --dest dist/releases `
             --app-version $version `
             --vendor "DiscordModernMusicBot" `
             --description "ModernMusicBot desktop launcher" `
-            --java-options "--enable-native-access=ALL-UNNAMED" `
             --win-shortcut `
-            --win-menu
+            --win-menu `
+            --win-dir-chooser `
+            --win-per-user-install
 
           $built = Get-ChildItem dist/releases -Filter "ModernMusicBot*.exe" | Select-Object -First 1
           if ($null -eq $built) {
