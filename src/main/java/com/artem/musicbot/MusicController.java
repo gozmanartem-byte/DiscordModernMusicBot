@@ -9,6 +9,9 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -46,6 +49,8 @@ public class MusicController {
     private static final int MAX_VOLUME = 200;
     private static final int MAX_BASS = 5;
     private static final int BULK_DELETE_LIMIT = 100;
+    private static final long PLAYER_PANEL_REFRESH_SECONDS = 2L;
+    private static final int MIN_FRAME_BUFFER_MS = 200;
 
     private final AudioPlayerManager playerManager;
     private final Map<Long, GuildMusicManager> musicManagers = new ConcurrentHashMap<>();
@@ -62,6 +67,12 @@ public class MusicController {
     private final Map<Long, Long> playerPanelChannelIds = new ConcurrentHashMap<>();
     private final Map<Long, AtomicBoolean> playerPanelRefreshInFlight = new ConcurrentHashMap<>();
     private final Map<Long, AtomicBoolean> playerPanelRefreshPending = new ConcurrentHashMap<>();
+    private final Map<Long, ScheduledFuture<?>> playerPanelAutoRefreshTasks = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService playerPanelRefresher = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread thread = new Thread(r, "player-panel-refresher");
+        thread.setDaemon(true);
+        return thread;
+    });
     private final Map<Long, Long> stopCleanupUntilMillis = new ConcurrentHashMap<>();
 
     public MusicController(BotConfig config, I18n i18n, GuildSettingsStore settingsStore) {
@@ -70,7 +81,7 @@ public class MusicController {
         this.playerManager = new DefaultAudioPlayerManager();
         this.playerManager.getConfiguration().setOutputFormat(StandardAudioDataFormats.DISCORD_OPUS);
         this.playerManager.getConfiguration().setFrameBufferFactory(
-            (bufferDuration, format, stopping) -> new NonAllocatingAudioFrameBuffer(Math.max(bufferDuration, 1400), format, stopping));
+            (bufferDuration, format, stopping) -> new NonAllocatingAudioFrameBuffer(Math.max(bufferDuration, MIN_FRAME_BUFFER_MS), format, stopping));
         this.playerManager.setItemLoaderThreadPoolSize(8);
 
         YoutubeAudioSourceManager youtubeSourceManager = new YoutubeAudioSourceManager(true,
@@ -87,12 +98,13 @@ public class MusicController {
     }
 
     public void loadAndPlay(TextChannel channel, Member member, String identifier) {
+        I18n localI18n = guildI18n(channel.getGuild());
         stopCleanupUntilMillis.remove(channel.getGuild().getIdLong());
         String resolvedIdentifier = normalizeIdentifier(identifier);
         lastTextChannels.put(channel.getGuild().getIdLong(), channel);
         VoiceChannel voiceChannel = getUserVoiceChannel(member);
         if (voiceChannel == null) {
-            channel.sendMessage("Join a voice channel first.").queue();
+            channel.sendMessage(localI18n.t("join.voice")).queue();
             return;
         }
 
@@ -101,17 +113,17 @@ public class MusicController {
 
         GuildVoiceState selfVoiceState = channel.getGuild().getSelfMember().getVoiceState();
         if (selfVoiceState != null && selfVoiceState.isGuildMuted()) {
-            channel.sendMessage("Warning: I am server-muted in this voice channel. Unmute me in Discord to hear audio.").queue();
+            channel.sendMessage(localI18n.t("join.serverMuted")).queue();
         }
 
-        channel.sendMessage("Loading: " + identifier).queue();
+        channel.sendMessage(localI18n.t("loading", identifier)).queue();
         playerManager.loadItemOrdered(musicManager, resolvedIdentifier, new AudioLoadResultHandler() {
             @Override
             public void trackLoaded(AudioTrack track) {
                 musicManager.scheduler.queue(track);
                 lastTrackQueries.put(channel.getGuild().getIdLong(), track.getInfo().title);
                 loadSuccessCount.incrementAndGet();
-                channel.sendMessage("Queued: " + track.getInfo().title).queue(
+                channel.sendMessage(localI18n.t("queued", track.getInfo().title)).queue(
                     ignored -> refreshPersistentPlayerPanel(channel.getGuild()),
                     ignored -> {
                     }
@@ -131,7 +143,7 @@ public class MusicController {
                 }
 
                 if (track == null) {
-                    channel.sendMessage("Playlist is empty.").queue();
+                    channel.sendMessage(localI18n.t("playlist.empty")).queue();
                     disconnectIfIdle(channel, musicManager);
                     return;
                 }
@@ -139,7 +151,7 @@ public class MusicController {
                 musicManager.scheduler.queue(track);
                 lastTrackQueries.put(channel.getGuild().getIdLong(), track.getInfo().title);
                 loadSuccessCount.incrementAndGet();
-                channel.sendMessage("Queued from playlist: " + track.getInfo().title).queue(
+                channel.sendMessage(localI18n.t("queued.playlist", track.getInfo().title)).queue(
                     ignored -> refreshPersistentPlayerPanel(channel.getGuild()),
                     ignored -> {
                     }
@@ -149,7 +161,7 @@ public class MusicController {
             @Override
             public void noMatches() {
                 noMatchesCount.incrementAndGet();
-                channel.sendMessage("Nothing found for: " + identifier).queue();
+                channel.sendMessage(localI18n.t("nothing.found", identifier)).queue();
                 disconnectIfIdle(channel, musicManager);
             }
 
@@ -163,6 +175,7 @@ public class MusicController {
     }
 
     public void enqueueFromControlPanel(TextChannel channel, String identifier) {
+        I18n localI18n = guildI18n(channel.getGuild());
         stopCleanupUntilMillis.remove(channel.getGuild().getIdLong());
         String resolvedIdentifier = normalizeIdentifier(identifier);
         lastTextChannels.put(channel.getGuild().getIdLong(), channel);
@@ -175,22 +188,22 @@ public class MusicController {
         } else {
             voiceChannel = resolveDesktopVoiceChannel(channel.getGuild());
             if (voiceChannel == null) {
-                channel.sendMessage("No active voice channel found. Join a voice channel in Discord first, then add songs from the app.").queue();
+                channel.sendMessage(localI18n.t("join.voice.desktop")).queue();
                 return;
             }
-            channel.sendMessage("Desktop auto-connected to voice channel: " + voiceChannel.getName()).queue();
+            channel.sendMessage(localI18n.t("join.voice.desktop.connected", voiceChannel.getName())).queue();
         }
 
         connect(channel.getGuild(), voiceChannel, musicManager);
 
-        channel.sendMessage("Loading: " + identifier).queue();
+        channel.sendMessage(localI18n.t("loading", identifier)).queue();
         playerManager.loadItemOrdered(musicManager, resolvedIdentifier, new AudioLoadResultHandler() {
             @Override
             public void trackLoaded(AudioTrack track) {
                 musicManager.scheduler.queue(track);
                 lastTrackQueries.put(channel.getGuild().getIdLong(), track.getInfo().title);
                 loadSuccessCount.incrementAndGet();
-                channel.sendMessage("Queued: " + track.getInfo().title).queue(
+                channel.sendMessage(localI18n.t("queued", track.getInfo().title)).queue(
                         ignored -> refreshPersistentPlayerPanel(channel.getGuild()),
                         ignored -> {
                         }
@@ -205,7 +218,7 @@ public class MusicController {
                 }
 
                 if (track == null) {
-                    channel.sendMessage("Playlist is empty.").queue();
+                    channel.sendMessage(localI18n.t("playlist.empty")).queue();
                     disconnectIfIdle(channel, musicManager);
                     return;
                 }
@@ -213,7 +226,7 @@ public class MusicController {
                 musicManager.scheduler.queue(track);
                 lastTrackQueries.put(channel.getGuild().getIdLong(), track.getInfo().title);
                 loadSuccessCount.incrementAndGet();
-                channel.sendMessage("Queued: " + track.getInfo().title).queue(
+                channel.sendMessage(localI18n.t("queued", track.getInfo().title)).queue(
                         ignored -> refreshPersistentPlayerPanel(channel.getGuild()),
                         ignored -> {
                         }
@@ -223,7 +236,7 @@ public class MusicController {
             @Override
             public void noMatches() {
                 noMatchesCount.incrementAndGet();
-                channel.sendMessage("Nothing found for: " + identifier).queue();
+                channel.sendMessage(localI18n.t("nothing.found", identifier)).queue();
                 disconnectIfIdle(channel, musicManager);
             }
 
@@ -305,15 +318,15 @@ public class MusicController {
     public SearchSelectionOutcome chooseSearchResult(TextChannel channel, Member member, String selectionId, int index) {
         PendingSearch pendingSearch = pendingSearches.get(selectionId);
         if (pendingSearch == null) {
-            return SearchSelectionOutcome.error("This search selection expired.");
+            return SearchSelectionOutcome.error(guildI18n(channel.getGuild()).t("search.expired"));
         }
 
         if (!canUsePendingSearch(member, pendingSearch)) {
-            return SearchSelectionOutcome.error("Only the user who started this search can choose a result.");
+            return SearchSelectionOutcome.error(guildI18n(channel.getGuild()).t("search.owner.only.choose"));
         }
 
         if (index < 0 || index >= pendingSearch.tracks().size()) {
-            return SearchSelectionOutcome.error("Invalid search result selection.");
+            return SearchSelectionOutcome.error(guildI18n(channel.getGuild()).t("search.invalid"));
         }
 
         AudioTrack track = pendingSearch.tracks().get(index).makeClone();
@@ -323,27 +336,27 @@ public class MusicController {
         musicManager.scheduler.queue(track);
         lastTrackQueries.put(channel.getGuild().getIdLong(), track.getInfo().title);
         loadSuccessCount.incrementAndGet();
-        channel.sendMessage("Queued: " + track.getInfo().title).queue(
+        channel.sendMessage(guildI18n(channel.getGuild()).t("queued", track.getInfo().title)).queue(
             ignored -> refreshPersistentPlayerPanel(channel.getGuild()),
             ignored -> {
             }
         );
-        return SearchSelectionOutcome.success("Selected: " + track.getInfo().title);
+        return SearchSelectionOutcome.success(guildI18n(channel.getGuild()).t("search.selected", track.getInfo().title));
     }
 
     public SearchSelectionOutcome cancelSearchSelection(TextChannel channel, Member member, String selectionId) {
         PendingSearch pendingSearch = pendingSearches.get(selectionId);
         if (pendingSearch == null) {
-            return SearchSelectionOutcome.error("This search selection already expired.");
+            return SearchSelectionOutcome.error(guildI18n(channel.getGuild()).t("search.expired"));
         }
 
         if (!canUsePendingSearch(member, pendingSearch)) {
-            return SearchSelectionOutcome.error("Only the user who started this search can cancel it.");
+            return SearchSelectionOutcome.error(guildI18n(channel.getGuild()).t("search.owner.only.cancel"));
         }
 
         pendingSearches.remove(selectionId);
         disconnectIfIdle(channel, getGuildMusicManager(channel.getGuild()));
-        return SearchSelectionOutcome.success("Search cancelled.");
+        return SearchSelectionOutcome.success(guildI18n(channel.getGuild()).t("search.cancelled"));
     }
 
     public MetricsSnapshot metricsSnapshot() {
@@ -370,7 +383,7 @@ public class MusicController {
             }
 
             nowPlayingTitle = current.getInfo().title;
-            nowPlayingPositionMs = current.getPosition();
+            nowPlayingPositionMs = manager.getCalculatedPositionMs();
             nowPlayingDurationMs = current.getDuration();
             nowPlayingState = manager.player.isPaused() ? "paused" : "playing";
             break;
@@ -432,51 +445,56 @@ public class MusicController {
     }
 
     public void skip(TextChannel channel) {
+        I18n localI18n = guildI18n(channel.getGuild());
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         AudioTrack next = musicManager.scheduler.skip();
         if (next == null) {
-            channel.sendMessage("Queue is empty.").queue();
+            channel.sendMessage(localI18n.t("queue.empty")).queue();
         } else {
-            channel.sendMessage("Skipped. Now playing: " + next.getInfo().title).queue();
+            channel.sendMessage(localI18n.t("skip.now", next.getInfo().title)).queue();
         }
         refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void pause(TextChannel channel) {
+        I18n localI18n = guildI18n(channel.getGuild());
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         AudioTrack current = musicManager.player.getPlayingTrack();
 
         if (current == null) {
-            channel.sendMessage("Nothing is playing right now.").queue();
+            channel.sendMessage(localI18n.t("play.none")).queue();
             return;
         }
 
         if (musicManager.player.isPaused()) {
-            channel.sendMessage("Playback is already paused.").queue();
+            channel.sendMessage(localI18n.t("pause.already")).queue();
             return;
         }
 
+        musicManager.markTrackPaused();
         musicManager.player.setPaused(true);
-        channel.sendMessage("Paused playback.").queue();
+        channel.sendMessage(localI18n.t("pause.done")).queue();
         refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void resume(TextChannel channel) {
+        I18n localI18n = guildI18n(channel.getGuild());
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         AudioTrack current = musicManager.player.getPlayingTrack();
 
         if (current == null) {
-            channel.sendMessage("Nothing is playing right now.").queue();
+            channel.sendMessage(localI18n.t("play.none")).queue();
             return;
         }
 
         if (!musicManager.player.isPaused()) {
-            channel.sendMessage("Playback is already running.").queue();
+            channel.sendMessage(localI18n.t("resume.already")).queue();
             return;
         }
 
+        musicManager.markTrackResumed();
         musicManager.player.setPaused(false);
-        channel.sendMessage("Resumed playback.").queue();
+        channel.sendMessage(localI18n.t("resume.done")).queue();
         refreshPersistentPlayerPanel(channel.getGuild());
     }
 
@@ -495,84 +513,120 @@ public class MusicController {
     }
 
     public void setVolume(TextChannel channel, int volume) {
+        I18n localI18n = guildI18n(channel.getGuild());
         if (volume < 0 || volume > MAX_VOLUME) {
-            channel.sendMessage("Volume must be between 0 and " + MAX_VOLUME + ".").queue();
+            channel.sendMessage(localI18n.t("volume.range")).queue();
             return;
         }
 
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         musicManager.player.setVolume(volume);
-        channel.sendMessage("Volume set to " + volume + "%.").queue();
+        channel.sendMessage(localI18n.t("volume.set", volume)).queue();
         refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void adjustVolume(TextChannel channel, int delta) {
+        I18n localI18n = guildI18n(channel.getGuild());
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         int current = musicManager.player.getVolume();
         int next = Math.max(0, Math.min(MAX_VOLUME, current + delta));
         musicManager.player.setVolume(next);
-        channel.sendMessage("Volume set to " + next + "%.").queue();
+        channel.sendMessage(localI18n.t("volume.set", next)).queue();
         refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void showVolume(TextChannel channel) {
+        I18n localI18n = guildI18n(channel.getGuild());
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
-        channel.sendMessage("Current volume: " + musicManager.player.getVolume() + "%.").queue();
+        channel.sendMessage(localI18n.t("volume.current", musicManager.player.getVolume())).queue();
     }
 
     public void setBass(TextChannel channel, int level) {
+        I18n localI18n = guildI18n(channel.getGuild());
         if (level < 0 || level > MAX_BASS) {
-            channel.sendMessage("Bass level must be between 0 and " + MAX_BASS + ".").queue();
+            channel.sendMessage(localI18n.t("bass.range")).queue();
             return;
         }
 
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         applyBassBoost(musicManager, level);
-        channel.sendMessage("Bass boost set to " + level + ".").queue();
+        channel.sendMessage(localI18n.t("bass.set", level)).queue();
         refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void adjustBass(TextChannel channel, int delta) {
+        I18n localI18n = guildI18n(channel.getGuild());
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         int current = musicManager.getBassLevel();
         int next = Math.max(0, Math.min(MAX_BASS, current + delta));
         applyBassBoost(musicManager, next);
-        channel.sendMessage("Bass boost set to " + next + ".").queue();
+        channel.sendMessage(localI18n.t("bass.set", next)).queue();
         refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void showBass(TextChannel channel) {
+        I18n localI18n = guildI18n(channel.getGuild());
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
-        channel.sendMessage("Current bass boost: " + musicManager.getBassLevel() + ".").queue();
+        channel.sendMessage(localI18n.t("bass.current", musicManager.getBassLevel())).queue();
     }
 
     public void resetNormal(TextChannel channel) {
+        I18n localI18n = guildI18n(channel.getGuild());
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         musicManager.player.setVolume(DEFAULT_VOLUME);
         applyBassBoost(musicManager, 0);
-        channel.sendMessage("Audio reset to normal (volume 100%, bass 0)." ).queue();
+        channel.sendMessage(localI18n.t("reset.done")).queue();
         refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void setLoudPreset(TextChannel channel, String prefix) {
+        I18n localI18n = guildI18n(channel.getGuild());
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         musicManager.player.setVolume(MAX_VOLUME);
         applyBassBoost(musicManager, MAX_BASS);
-        channel.sendMessage("Loud preset enabled (volume 200%, bass 5). Use " + prefix + "normal to reset.").queue();
+        channel.sendMessage(localI18n.t("loud.done", prefix)).queue();
         refreshPersistentPlayerPanel(channel.getGuild());
     }
 
+    public void setEarRapeHostOnly(TextChannel channel, boolean enabled) {
+        GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
+        if (enabled) {
+            musicManager.player.setVolume(MAX_VOLUME);
+            applyBassBoost(musicManager, MAX_BASS);
+        } else {
+            musicManager.player.setVolume(DEFAULT_VOLUME);
+            applyBassBoost(musicManager, 0);
+        }
+        refreshPersistentPlayerPanel(channel.getGuild());
+    }
+
+    public void setEarRapeHostOnly(long guildId, boolean enabled) {
+        GuildMusicManager musicManager = musicManagers.get(guildId);
+        if (musicManager == null) {
+            return;
+        }
+
+        if (enabled) {
+            musicManager.player.setVolume(MAX_VOLUME);
+            applyBassBoost(musicManager, MAX_BASS);
+        } else {
+            musicManager.player.setVolume(DEFAULT_VOLUME);
+            applyBassBoost(musicManager, 0);
+        }
+    }
+
     public void queue(TextChannel channel) {
+        I18n localI18n = guildI18n(channel.getGuild());
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         AudioTrack current = musicManager.player.getPlayingTrack();
         StringBuilder builder = new StringBuilder();
         if (current != null) {
-            builder.append("Now playing: ").append(current.getInfo().title).append('\n');
+            builder.append(localI18n.t("now.playing", current.getInfo().title)).append('\n');
         }
         if (musicManager.scheduler.getQueue().isEmpty()) {
-            builder.append("Queue is empty.");
+            builder.append(localI18n.t("queue.empty"));
         } else {
-            builder.append("Upcoming:").append('\n');
+            builder.append(localI18n.t("upcoming")).append('\n');
             int index = 1;
             for (AudioTrack track : musicManager.scheduler.getQueue()) {
                 builder.append(index++).append(". ").append(track.getInfo().title).append('\n');
@@ -586,61 +640,67 @@ public class MusicController {
     }
 
     public void remove(TextChannel channel, int index) {
+        I18n localI18n = guildI18n(channel.getGuild());
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         boolean removed = musicManager.scheduler.removeAt(index);
-        channel.sendMessage(removed ? "Removed track #" + index + " from queue." : "Invalid queue index.").queue();
+        channel.sendMessage(removed ? localI18n.t("queue.removed", index) : localI18n.t("queue.invalidIndex")).queue();
         refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void clearQueue(TextChannel channel) {
+        I18n localI18n = guildI18n(channel.getGuild());
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         int removed = musicManager.scheduler.clearQueue();
-        channel.sendMessage("Cleared " + removed + " queued track(s).").queue();
+        channel.sendMessage(localI18n.t("queue.cleared", removed)).queue();
         refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void shuffleQueue(TextChannel channel) {
+        I18n localI18n = guildI18n(channel.getGuild());
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         int shuffled = musicManager.scheduler.shuffleQueue();
-        channel.sendMessage(shuffled == 0 ? "Queue is empty." : "Shuffled " + shuffled + " queued track(s).").queue();
+        channel.sendMessage(shuffled == 0 ? localI18n.t("queue.empty") : localI18n.t("queue.shuffled", shuffled)).queue();
         refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void setLoop(TextChannel channel, String mode) {
+        I18n localI18n = guildI18n(channel.getGuild());
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         String normalized = mode == null ? "off" : mode.trim().toLowerCase();
 
         switch (normalized) {
             case "track" -> {
                 musicManager.scheduler.setLoopTrack(true);
-                channel.sendMessage("Loop mode set to: track.").queue();
+                channel.sendMessage(localI18n.t("loop.track")).queue();
             }
             case "queue" -> {
                 musicManager.scheduler.setLoopQueue(true);
-                channel.sendMessage("Loop mode set to: queue.").queue();
+                channel.sendMessage(localI18n.t("loop.queue")).queue();
             }
             default -> {
                 musicManager.scheduler.setLoopTrack(false);
                 musicManager.scheduler.setLoopQueue(false);
-                channel.sendMessage("Loop mode set to: off.").queue();
+                channel.sendMessage(localI18n.t("loop.off")).queue();
             }
         }
         refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void seek(TextChannel channel, long seconds) {
+        I18n localI18n = guildI18n(channel.getGuild());
         if (seconds < 0) {
-            channel.sendMessage("Seek must be >= 0.").queue();
+            channel.sendMessage(localI18n.t("seek.nonNegative")).queue();
             return;
         }
 
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
         boolean ok = musicManager.scheduler.seekTo(seconds * 1000L);
-        channel.sendMessage(ok ? "Seeked to " + seconds + "s." : "Nothing is playing right now.").queue();
+        channel.sendMessage(ok ? localI18n.t("seek.done", seconds) : localI18n.t("play.none")).queue();
         refreshPersistentPlayerPanel(channel.getGuild());
     }
 
     public void setAutoplay(TextChannel channel, boolean enabled) {
+        I18n localI18n = guildI18n(channel.getGuild());
         long guildId = channel.getGuild().getIdLong();
         GuildSettings current = settingsStore.get(guildId);
         settingsStore.upsert(new GuildSettings(
@@ -653,7 +713,7 @@ public class MusicController {
                 current.commandChannelId(),
                 current.blockedRoleId()
         ));
-        channel.sendMessage("Autoplay " + (enabled ? "enabled." : "disabled.")).queue();
+        channel.sendMessage(enabled ? localI18n.t("autoplay.enabled") : localI18n.t("autoplay.disabled")).queue();
         refreshPersistentPlayerPanel(channel.getGuild());
     }
 
@@ -675,12 +735,17 @@ public class MusicController {
 
     public void sendPlayerPanel(TextChannel channel, String prefix) {
         repostPlayerPanel(channel, prefix);
+        startPlayerPanelAutoRefresh(channel.getGuild());
     }
 
     public void refreshPlayerPanel(Message message, String prefix) {
         if (message.getChannel() instanceof TextChannel channel) {
             repostPlayerPanel(channel, prefix);
         }
+    }
+
+    public void refreshPresenceForGuild(Guild guild) {
+        updatePresence(guild);
     }
 
     public void debugAudio(TextChannel channel) {
@@ -746,9 +811,15 @@ public class MusicController {
 
     private GuildMusicManager getGuildMusicManager(Guild guild) {
         return musicManagers.computeIfAbsent(guild.getIdLong(), id -> {
+            java.util.concurrent.atomic.AtomicReference<GuildMusicManager> managerRef = new java.util.concurrent.atomic.AtomicReference<>();
             GuildMusicManager musicManager = new GuildMusicManager(
                     playerManager,
                     track -> {
+                        GuildMusicManager manager = managerRef.get();
+                        if (manager != null) {
+                            manager.markTrackStarted();
+                        }
+                        startPlayerPanelAutoRefresh(guild);
                         updatePresence(guild);
                         lastTrackQueries.put(guild.getIdLong(), track.getInfo().title);
                         refreshPersistentPlayerPanel(guild);
@@ -759,6 +830,7 @@ public class MusicController {
                         refreshPersistentPlayerPanel(guild);
                     }
             );
+            managerRef.set(musicManager);
 
             int defaultVolume = settingsStore.get(guild.getIdLong()).defaultVolume();
             musicManager.player.setVolume(Math.max(0, Math.min(MAX_VOLUME, defaultVolume)));
@@ -768,68 +840,71 @@ public class MusicController {
     }
 
     private void updatePresence(Guild guild) {
-        String title = null;
-        for (GuildMusicManager manager : musicManagers.values()) {
-            AudioTrack track = manager.player.getPlayingTrack();
-            if (track != null) {
-                title = track.getInfo().title;
-                break;
-            }
-        }
+        GuildMusicManager manager = musicManagerRef(guild);
+        AudioTrack track = manager == null ? null : manager.player.getPlayingTrack();
+        String title = track == null ? null : track.getInfo().title;
 
+        I18n presenceI18n = guildI18n(guild);
         if (title == null || title.isBlank()) {
-            guild.getJDA().getPresence().setActivity(Activity.playing(i18n.t("status.waiting")));
+            guild.getJDA().getPresence().setActivity(Activity.playing(presenceI18n.t("status.waiting")));
         } else {
-            guild.getJDA().getPresence().setActivity(Activity.playing(i18n.t("status.playing", title)));
+            guild.getJDA().getPresence().setActivity(Activity.playing(presenceI18n.t("status.playing", title)));
         }
     }
 
+    private I18n guildI18n(Guild guild) {
+        return new I18n(settingsStore.get(guild.getIdLong()).language());
+    }
+
     private MessageEmbed buildPlayerEmbed(Guild guild, String prefix) {
+        I18n localI18n = guildI18n(guild);
         GuildMusicManager musicManager = getGuildMusicManager(guild);
         AudioTrack current = musicManager.player.getPlayingTrack();
 
         String state = current == null
-                ? i18n.t("player.state.idle")
+                ? localI18n.t("player.state.idle")
                 : musicManager.player.isPaused()
-                    ? i18n.t("player.state.paused")
-                    : i18n.t("player.state.playing");
+                    ? localI18n.t("player.state.paused")
+                    : localI18n.t("player.state.playing");
 
         String trackValue = current == null
-            ? i18n.t("player.none")
-            : buildTrackValue(current);
+            ? localI18n.t("player.none")
+            : buildTrackValue(musicManager, current);
 
         var connectedChannel = guild.getAudioManager().getConnectedChannel();
-        String voiceValue = connectedChannel == null ? i18n.t("player.notConnected") : connectedChannel.getName();
-        String queueValue = buildQueuePreview(musicManager);
+        String voiceValue = connectedChannel == null ? localI18n.t("player.notConnected") : connectedChannel.getName();
+        String queueValue = buildQueuePreview(musicManager, localI18n);
 
         return new EmbedBuilder()
-                .setTitle(i18n.t("player.title"))
-                .setDescription(i18n.t("player.hint", prefix))
+                .setTitle(localI18n.t("player.title"))
+                .setDescription(localI18n.t("player.hint", prefix))
                 .setColor(current == null ? new Color(120, 120, 120) : new Color(46, 204, 113))
-                .addField(i18n.t("player.status"), state, true)
-                .addField(i18n.t("player.voice"), voiceValue, true)
-                .addField(i18n.t("player.volume"), musicManager.player.getVolume() + "%", true)
-                .addField(i18n.t("player.track"), trackValue, false)
-                .addField(i18n.t("player.queuePreview"), queueValue, false)
-                .addField(i18n.t("player.bass"), String.valueOf(musicManager.getBassLevel()), true)
-                .setFooter(i18n.t("player.footer", prefix))
+                .addField(localI18n.t("player.status"), state, true)
+                .addField(localI18n.t("player.voice"), voiceValue, true)
+                .addField(localI18n.t("player.volume"), musicManager.player.getVolume() + "%", true)
+                .addField(localI18n.t("player.track"), trackValue, false)
+                .addField(localI18n.t("player.queuePreview"), queueValue, false)
+                .addField(localI18n.t("player.bass"), String.valueOf(musicManager.getBassLevel()), true)
+                .setFooter(localI18n.t("player.footer", prefix))
                 .build();
     }
 
-    private String buildTrackValue(AudioTrack current) {
-        long position = current.getPosition();
+    private String buildTrackValue(GuildMusicManager musicManager, AudioTrack current) {
+        long position = musicManager.getCalculatedPositionMs();
         long duration = current.getDuration();
-        long now = System.currentTimeMillis();
-        long startedEpoch = Math.max(0L, (now - position) / 1000L);
 
-        StringBuilder value = new StringBuilder(current.getInfo().title)
-                .append("\n<t:")
-                .append(startedEpoch)
-                .append(":R>")
+        if (duration >= 0) {
+            position = Math.max(0L, Math.min(position, duration));
+        } else {
+            position = Math.max(0L, position);
+        }
+
+        return new StringBuilder(current.getInfo().title)
+                .append("\n")
+                .append(formatDuration(position))
                 .append(" / ")
-                .append(formatDuration(duration));
-
-        return value.toString();
+                .append(formatDuration(duration))
+                .toString();
     }
 
     private void repostPlayerPanel(TextChannel channel, String prefix) {
@@ -867,7 +942,7 @@ public class MusicController {
         deleteTrackedPlayerPanel(channel.getGuild(), guildId);
 
         channel.sendMessageEmbeds(buildPlayerEmbed(channel.getGuild(), prefix))
-                .setComponents(playerComponents())
+            .setComponents(playerComponents(guildI18n(channel.getGuild())))
                 .queue(message -> {
                     playerPanelChannelIds.put(guildId, channel.getIdLong());
                     playerPanelMessageIds.put(guildId, message.getIdLong());
@@ -942,6 +1017,43 @@ public class MusicController {
         deleteTrackedPlayerPanel(guild, guildId);
         playerPanelRefreshInFlight.remove(guildId);
         playerPanelRefreshPending.remove(guildId);
+        stopPlayerPanelAutoRefresh(guildId);
+    }
+
+    private void startPlayerPanelAutoRefresh(Guild guild) {
+        long guildId = guild.getIdLong();
+        playerPanelAutoRefreshTasks.compute(guildId, (ignored, existing) -> {
+            if (existing != null && !existing.isCancelled() && !existing.isDone()) {
+                return existing;
+            }
+
+            return playerPanelRefresher.scheduleAtFixedRate(() -> {
+                GuildMusicManager manager = musicManagerRef(guild);
+                if (manager == null) {
+                    stopPlayerPanelAutoRefresh(guildId);
+                    return;
+                }
+
+                AudioTrack current = manager.player.getPlayingTrack();
+                if (current == null) {
+                    stopPlayerPanelAutoRefresh(guildId);
+                    return;
+                }
+
+                if (manager.player.isPaused()) {
+                    return;
+                }
+
+                refreshPersistentPlayerPanel(guild);
+            }, PLAYER_PANEL_REFRESH_SECONDS, PLAYER_PANEL_REFRESH_SECONDS, TimeUnit.SECONDS);
+        });
+    }
+
+    private void stopPlayerPanelAutoRefresh(long guildId) {
+        ScheduledFuture<?> task = playerPanelAutoRefreshTasks.remove(guildId);
+        if (task != null) {
+            task.cancel(false);
+        }
     }
 
     private void cleanupRecentChat(TextChannel channel) {
@@ -1018,30 +1130,30 @@ public class MusicController {
         ));
     }
 
-    private List<MessageTopLevelComponent> playerComponents() {
+    private List<MessageTopLevelComponent> playerComponents(I18n localI18n) {
         return List.of(
                 ActionRow.of(
-                        Button.secondary("player:pause", i18n.t("player.pause")),
-                        Button.success("player:resume", i18n.t("player.resume")),
-                        Button.primary("player:skip", i18n.t("player.skip")),
-                        Button.danger("player:stop", i18n.t("player.stop"))
+                Button.primary("player:pause", localI18n.t("player.pause")),
+                        Button.success("player:resume", localI18n.t("player.resume")),
+                        Button.primary("player:skip", localI18n.t("player.skip")),
+                        Button.danger("player:stop", localI18n.t("player.stop"))
                 ),
                 ActionRow.of(
-                        Button.secondary("player:voldown", i18n.t("player.voldown")),
-                        Button.secondary("player:volup", i18n.t("player.volup")),
-                    Button.secondary("player:bassdown", i18n.t("player.bassdown")),
-                    Button.secondary("player:bassup", i18n.t("player.bassup"))
+                        Button.secondary("player:voldown", localI18n.t("player.voldown")),
+                        Button.secondary("player:volup", localI18n.t("player.volup")),
+                    Button.secondary("player:bassdown", localI18n.t("player.bassdown")),
+                    Button.secondary("player:bassup", localI18n.t("player.bassup"))
                 ),
                 ActionRow.of(
-                    Button.secondary("player:bassreset", i18n.t("player.bassreset")),
-                        Button.secondary("player:refresh", i18n.t("player.refresh"))
+                    Button.secondary("player:bassreset", localI18n.t("player.bassreset")),
+                        Button.secondary("player:refresh", localI18n.t("player.refresh"))
                 )
         );
     }
 
-    private String buildQueuePreview(GuildMusicManager musicManager) {
+    private String buildQueuePreview(GuildMusicManager musicManager, I18n localI18n) {
         if (musicManager.scheduler.getQueue().isEmpty()) {
-            return i18n.t("player.queueEmpty");
+            return localI18n.t("player.queueEmpty");
         }
 
         StringBuilder builder = new StringBuilder();
@@ -1103,7 +1215,7 @@ public class MusicController {
                 }
                 musicManager.scheduler.queue(track);
                 lastTrackQueries.put(guild.getIdLong(), track.getInfo().title);
-                announceChannel.sendMessage("Autoplay queued: " + track.getInfo().title).queue();
+                announceChannel.sendMessage(guildI18n(guild).t("autoplay.queued", track.getInfo().title)).queue();
             }
 
             @Override
@@ -1118,7 +1230,7 @@ public class MusicController {
                     }
                     musicManager.scheduler.queue(selected);
                     lastTrackQueries.put(guild.getIdLong(), selected.getInfo().title);
-                    announceChannel.sendMessage("Autoplay queued: " + selected.getInfo().title).queue();
+                    announceChannel.sendMessage(guildI18n(guild).t("autoplay.queued", selected.getInfo().title)).queue();
                 }
             }
 
@@ -1227,7 +1339,7 @@ public class MusicController {
                 .toList();
 
         if (topTracks.isEmpty()) {
-            channel.sendMessage("Nothing found for: " + query).queue();
+            channel.sendMessage(guildI18n(channel.getGuild()).t("nothing.found", query)).queue();
             disconnectIfIdle(channel, musicManager);
             return;
         }
@@ -1286,7 +1398,7 @@ public class MusicController {
         if (musicManager.player.getPlayingTrack() == null && musicManager.scheduler.getQueue().isEmpty()) {
             channel.getGuild().getAudioManager().closeAudioConnection();
             updatePresence(channel.getGuild());
-            channel.sendMessage("No playable track was loaded, so I left the voice channel.").queue();
+            channel.sendMessage(guildI18n(channel.getGuild()).t("disconnect.idle")).queue();
         }
     }
 

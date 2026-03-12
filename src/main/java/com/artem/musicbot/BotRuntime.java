@@ -78,6 +78,7 @@ public class BotRuntime {
         }
 
         jda = built;
+        synchronizeGuildLanguage(config.languageCode(), logger);
 
         if (config.dashboardEnabled()) {
             dashboardServer = new LocalDashboardServer(
@@ -94,6 +95,39 @@ public class BotRuntime {
         logger.accept("Config path: " + resolvedConfigPath);
         logger.accept("State path: " + stateDirectory);
         logger.accept("Bot started successfully.");
+    }
+
+    private void synchronizeGuildLanguage(String languageCode, Consumer<String> logger) {
+        if (jda == null || settingsStore == null || musicController == null) {
+            return;
+        }
+
+        int updated = 0;
+        String normalized = I18n.Language.from(languageCode).code();
+
+        for (Guild guild : jda.getGuilds()) {
+            GuildSettings current = settingsStore.get(guild.getIdLong());
+            if (!normalized.equalsIgnoreCase(current.language())) {
+                GuildSettings next = new GuildSettings(
+                        current.guildId(),
+                        current.prefix(),
+                        normalized,
+                        current.djRoleId(),
+                        current.defaultVolume(),
+                        current.autoplay(),
+                        current.commandChannelId(),
+                        current.blockedRoleId()
+                );
+                settingsStore.upsert(next);
+                updated++;
+            }
+
+            musicController.refreshPresenceForGuild(guild);
+        }
+
+        if (updated > 0) {
+            logger.accept("Synchronized bot.language=" + normalized + " for " + updated + " guild(s).");
+        }
     }
 
     public synchronized void stop(Consumer<String> logger) {
@@ -175,6 +209,20 @@ public class BotRuntime {
     public synchronized void stopFromDesktop(long guildId, long channelId) {
         TextChannel channel = requireTextChannel(guildId, channelId);
         musicController.stop(channel);
+    }
+
+    public void enableEarRapeFromDesktop(long guildId, long channelId) {
+        if (musicController == null) {
+            throw new IllegalStateException("Bot is not running.");
+        }
+        musicController.setEarRapeHostOnly(guildId, true);
+    }
+
+    public void disableEarRapeFromDesktop(long guildId, long channelId) {
+        if (musicController == null) {
+            throw new IllegalStateException("Bot is not running.");
+        }
+        musicController.setEarRapeHostOnly(guildId, false);
     }
 
     public synchronized void launchPlayerPanelFromDesktop(long guildId, long channelId) {

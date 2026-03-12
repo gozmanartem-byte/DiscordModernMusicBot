@@ -1,10 +1,10 @@
 package com.artem.musicbot;
 
+import java.util.function.Consumer;
+
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayer;
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayerManager;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
-
-import java.util.function.Consumer;
 
 public class GuildMusicManager {
     public final AudioPlayer player;
@@ -26,5 +26,25 @@ public class GuildMusicManager {
 
     public void setBassLevel(int bassLevel) {
         this.bassLevel = bassLevel;
+    }
+
+    public void markTrackStarted() {
+        // Kept for compatibility with existing call sites.
+    }
+
+    public void markTrackPaused() {
+        // Kept for compatibility with existing call sites.
+    }
+
+    public void markTrackResumed() {
+        // Kept for compatibility with existing call sites.
+    }
+
+    public long getCalculatedPositionMs() {
+        AudioTrack current = player.getPlayingTrack();
+        if (current == null) {
+            return 0L;
+        }
+        return current.getPosition();
     }
 }

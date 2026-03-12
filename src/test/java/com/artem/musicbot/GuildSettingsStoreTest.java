@@ -2,12 +2,10 @@ package com.artem.musicbot;
 
 import java.nio.file.Path;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GuildSettingsStoreTest {
 
@@ -25,7 +23,7 @@ class GuildSettingsStoreTest {
         assertEquals("en", defaults.language());
         assertEquals(0L, defaults.commandChannelId());
         assertEquals(0L, defaults.blockedRoleId());
-        assertFalse(defaults.autoplay());
+        assertTrue(defaults.autoplay());
     }
 
     @Test

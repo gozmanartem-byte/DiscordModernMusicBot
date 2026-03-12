@@ -3,7 +3,10 @@
 
 bot.token=PASTE_BOT_TOKEN_HERE
 bot.prefix=!
+# Bot language for Discord status/player
 bot.language=en
+# Control panel UI language
+app.language=en
 bot.dashboard.enabled=true
 bot.dashboard.port=8090
 

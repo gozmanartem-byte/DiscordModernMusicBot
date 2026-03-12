@@ -65,11 +65,13 @@ public class ControlPanelApp {
 
     private final BotRuntime runtime = new BotRuntime();
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private final ExecutorService realtimeWorker = Executors.newSingleThreadExecutor();
 
     private JFrame frame;
     private JPasswordField tokenField;
     private JTextField prefixField;
     private JComboBox<LanguageOption> languageCombo;
+    private JComboBox<LanguageOption> controlPanelLanguageCombo;
     private JTextArea console;
     private JButton startButton;
     private JButton stopButton;
@@ -82,17 +84,21 @@ public class ControlPanelApp {
     private JButton resumeButton;
     private JButton skipButton;
     private JButton stopPlaybackButton;
+    private JButton earRapeToggleButton;
+    private boolean earRapeEnabled;
     private JButton refreshDesktopButton;
     private JButton launchPlayerButton;
     private JTextArea playerSummaryArea;
     private Timer desktopRefreshTimer;
+    private String controlPanelLanguageCode = "en";
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> new ControlPanelApp().show());
     }
 
     private void show() {
-        frame = new JFrame("ModernMusicBot Control Panel");
+        loadControlPanelLanguagePreference();
+        frame = new JFrame(ui("appTitle"));
         applyAppIcon();
         frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         frame.setLayout(new BorderLayout(10, 10));
@@ -102,7 +108,7 @@ public class ControlPanelApp {
         }
 
         JPanel top = new JPanel(new GridBagLayout());
-        top.setBorder(BorderFactory.createTitledBorder("Settings"));
+        top.setBorder(BorderFactory.createTitledBorder(ui("settings")));
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(4, 6, 4, 6);
         c.anchor = GridBagConstraints.WEST;
@@ -112,7 +118,7 @@ public class ControlPanelApp {
         c.gridx = 0;
         c.gridy = 0;
         c.weightx = 0;
-        top.add(new JLabel("Bot Token:"), c);
+        top.add(new JLabel(ui("botToken") + ":"), c);
 
         tokenField = new JPasswordField();
         tokenField.setPreferredSize(new Dimension(420, 26));
@@ -123,7 +129,7 @@ public class ControlPanelApp {
         c.gridx = 0;
         c.gridy = 1;
         c.weightx = 0;
-        top.add(new JLabel("Prefix:"), c);
+        top.add(new JLabel(ui("prefix") + ":"), c);
 
         prefixField = new JTextField("!");
         c.gridx = 1;
@@ -133,7 +139,7 @@ public class ControlPanelApp {
         c.gridx = 0;
         c.gridy = 2;
         c.weightx = 0;
-        top.add(new JLabel("Language:"), c);
+        top.add(new JLabel(ui("botLanguage") + ":"), c);
 
         languageCombo = new JComboBox<>(LANGUAGE_OPTIONS);
         languageCombo.setSelectedIndex(0);
@@ -141,10 +147,21 @@ public class ControlPanelApp {
         c.weightx = 1.0;
         top.add(languageCombo, c);
 
+        c.gridx = 0;
+        c.gridy = 3;
+        c.weightx = 0;
+        top.add(new JLabel(ui("controlPanelLanguage") + ":"), c);
+
+        controlPanelLanguageCombo = new JComboBox<>(LANGUAGE_OPTIONS);
+        controlPanelLanguageCombo.setSelectedIndex(0);
+        c.gridx = 1;
+        c.weightx = 1.0;
+        top.add(controlPanelLanguageCombo, c);
+
         JPanel buttons = new JPanel();
-        startButton = new JButton("Start");
-        stopButton = new JButton("Stop");
-        saveButton = new JButton("Save Settings");
+        startButton = new JButton(ui("start"));
+        stopButton = new JButton(ui("stop"));
+        saveButton = new JButton(ui("saveSettings"));
         stopButton.setEnabled(false);
         buttons.add(startButton);
         buttons.add(stopButton);
@@ -153,7 +170,7 @@ public class ControlPanelApp {
         console = new JTextArea();
         console.setEditable(false);
         JScrollPane scrollPane = new JScrollPane(console);
-        scrollPane.setBorder(BorderFactory.createTitledBorder("Console"));
+        scrollPane.setBorder(BorderFactory.createTitledBorder(ui("console")));
 
         JPanel centerPanel = new JPanel(new BorderLayout(10, 10));
         centerPanel.add(buttons, BorderLayout.NORTH);
@@ -178,7 +195,7 @@ public class ControlPanelApp {
         wireActions();
         frame.setLocationRelativeTo(null);
         frame.setVisible(true);
-        log("Control panel ready.");
+        log(ui("controlPanelReady"));
         showFirstLaunchBannerIfNeeded();
 
         if (isDesktopOnboardingEnabled()) {
@@ -193,6 +210,7 @@ public class ControlPanelApp {
                 if (desktopRefreshTimer != null) {
                     desktopRefreshTimer.stop();
                 }
+                realtimeWorker.shutdownNow();
                 worker.shutdownNow();
                 runtime.stop(ControlPanelApp.this::log);
             }
@@ -221,9 +239,9 @@ public class ControlPanelApp {
         saveButton.addActionListener(e -> {
             try {
                 saveConfigFromFields();
-                log("Settings saved.");
+                log(ui("settingsSaved"));
             } catch (Exception ex) {
-                showError("Failed to save settings: " + ex.getMessage());
+                showError(ui("saveFailed") + ": " + ex.getMessage());
             }
         });
 
@@ -232,7 +250,7 @@ public class ControlPanelApp {
             worker.submit(() -> {
                 try {
                     saveConfigFromFields();
-                    log("Starting bot...");
+                    log(ui("startingBot"));
                     runtime.start(resolveConfigPath(), true, this::log);
                     SwingUtilities.invokeLater(() -> {
                         stopButton.setEnabled(true);
@@ -242,7 +260,7 @@ public class ControlPanelApp {
                     refreshDesktopSelectorsAsync();
                     refreshPlayerSummaryAsync();
                 } catch (Exception ex) {
-                    log("Start failed: " + ex.getMessage());
+                    log(ui("startFailed") + ": " + ex.getMessage());
                     SwingUtilities.invokeLater(() -> startButton.setEnabled(true));
                 }
             });
@@ -253,9 +271,10 @@ public class ControlPanelApp {
             SwingUtilities.invokeLater(() -> {
                 stopButton.setEnabled(false);
                 startButton.setEnabled(true);
+                setEarRapeEnabled(false);
                 setDesktopControlsEnabled(false);
                 if (playerSummaryArea != null) {
-                    playerSummaryArea.setText("Bot is not running.");
+                    playerSummaryArea.setText(ui("botNotRunning"));
                 }
             });
         }));
@@ -263,13 +282,14 @@ public class ControlPanelApp {
         if (isDesktopOnboardingEnabled()) {
             guildCombo.addActionListener(ignored -> refreshChannelsAsync());
             guildCombo.addActionListener(ignored -> refreshPlayerSummaryAsync());
+            guildCombo.addActionListener(ignored -> setEarRapeEnabled(false));
 
             addSongButton.addActionListener(ignored -> worker.submit(() -> {
                 Long guildId = selectedGuildId();
                 Long channelId = selectedChannelId();
                 String query = addSongField.getText().trim();
                 if (guildId == null || channelId == null || query.isBlank()) {
-                    SwingUtilities.invokeLater(() -> showError("Select guild/channel and enter a song or URL."));
+                    SwingUtilities.invokeLater(() -> showError(ui("selectGuildChannelSong")));
                     return;
                 }
 
@@ -278,13 +298,13 @@ public class ControlPanelApp {
                     if (isSearchQuery(query)) {
                         List<BotRuntime.SearchTrackOptionRef> options = runtime.searchTracksFromDesktop(query, 3);
                         if (options.isEmpty()) {
-                            SwingUtilities.invokeLater(() -> showError("Nothing found for: " + query));
+                            SwingUtilities.invokeLater(() -> showError(ui("nothingFound") + ": " + query));
                             return;
                         }
 
                         int selected = pickSearchResultIndex(query, options);
                         if (selected < 0) {
-                            log("Desktop search cancelled: " + query);
+                            log(ui("desktopSearchCancelled") + ": " + query);
                             return;
                         }
 
@@ -292,7 +312,7 @@ public class ControlPanelApp {
                     }
 
                     runtime.addSongFromDesktop(guildId, channelId, enqueueQuery);
-                    log("Desktop queued: " + query);
+                    log(ui("desktopQueued") + ": " + query);
                     SwingUtilities.invokeLater(() -> addSongField.setText(""));
                     refreshPlayerSummaryAsync();
                 } catch (Exception ex) {
@@ -304,6 +324,35 @@ public class ControlPanelApp {
             resumeButton.addActionListener(ignored -> desktopControlAsync("resume", BotRuntime::resumeFromDesktop));
             skipButton.addActionListener(ignored -> desktopControlAsync("skip", BotRuntime::skipFromDesktop));
             stopPlaybackButton.addActionListener(ignored -> desktopControlAsync("stop", BotRuntime::stopFromDesktop));
+            earRapeToggleButton.addActionListener(ignored -> {
+                final boolean targetState = !earRapeEnabled;
+                Long guildId = selectedGuildId();
+                Long channelId = selectedChannelId();
+                if (guildId == null || channelId == null) {
+                    showError(ui("selectGuildTextChannelFirst"));
+                    return;
+                }
+
+                setEarRapeEnabled(targetState);
+                earRapeToggleButton.setEnabled(false);
+                realtimeWorker.submit(() -> {
+                    try {
+                        if (targetState) {
+                            runtime.enableEarRapeFromDesktop(guildId, channelId);
+                        } else {
+                            runtime.disableEarRapeFromDesktop(guildId, channelId);
+                        }
+                        refreshPlayerSummaryAsync();
+                    } catch (Exception ex) {
+                        SwingUtilities.invokeLater(() -> {
+                            setEarRapeEnabled(!targetState);
+                            showError(ex.getMessage());
+                        });
+                    } finally {
+                        SwingUtilities.invokeLater(() -> earRapeToggleButton.setEnabled(runtime.isRunning()));
+                    }
+                });
+            });
             refreshDesktopButton.addActionListener(ignored -> {
                 refreshDesktopSelectorsAsync();
                 refreshPlayerSummaryAsync();
@@ -312,13 +361,13 @@ public class ControlPanelApp {
                 Long guildId = selectedGuildId();
                 Long channelId = selectedChannelId();
                 if (guildId == null || channelId == null) {
-                    SwingUtilities.invokeLater(() -> showError("Select guild and text channel first."));
+                    SwingUtilities.invokeLater(() -> showError(ui("selectGuildTextChannelFirst")));
                     return;
                 }
 
                 try {
                     runtime.launchPlayerPanelFromDesktop(guildId, channelId);
-                    log("Posted player panel to Discord.");
+                    log(ui("playerPanelPosted"));
                     refreshPlayerSummaryAsync();
                 } catch (Exception ex) {
                     SwingUtilities.invokeLater(() -> showError(ex.getMessage()));
@@ -329,7 +378,7 @@ public class ControlPanelApp {
 
     private JPanel buildDesktopPlayerPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
-        panel.setBorder(BorderFactory.createTitledBorder("Host Player (Desktop)"));
+        panel.setBorder(BorderFactory.createTitledBorder(ui("desktopPlayer")));
 
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(4, 6, 4, 6);
@@ -340,21 +389,23 @@ public class ControlPanelApp {
         guildCombo = new JComboBox<>();
         channelCombo = new JComboBox<>();
         addSongField = new JTextField();
-        addSongButton = new JButton("Add Song");
-        pauseButton = new JButton("Pause");
-        resumeButton = new JButton("Resume");
-        skipButton = new JButton("Skip");
-        stopPlaybackButton = new JButton("Stop");
-        refreshDesktopButton = new JButton("Refresh Lists");
-        launchPlayerButton = new JButton("Launch Player in Discord");
+        addSongButton = new JButton(ui("addSong"));
+        pauseButton = new JButton(ui("pause"));
+        resumeButton = new JButton(ui("resume"));
+        skipButton = new JButton(ui("skip"));
+        stopPlaybackButton = new JButton(ui("stop"));
+        earRapeToggleButton = new JButton();
+        setEarRapeEnabled(false);
+        refreshDesktopButton = new JButton(ui("refreshLists"));
+        launchPlayerButton = new JButton(ui("launchPlayer"));
         playerSummaryArea = new JTextArea(16, 58);
         playerSummaryArea.setEditable(false);
-        playerSummaryArea.setText("Bot is not running.");
+        playerSummaryArea.setText(ui("botNotRunning"));
 
         c.gridx = 0;
         c.gridy = 0;
         c.weightx = 0;
-        panel.add(new JLabel("Guild:"), c);
+        panel.add(new JLabel(ui("guild") + ":"), c);
 
         c.gridx = 1;
         c.weightx = 1;
@@ -370,7 +421,7 @@ public class ControlPanelApp {
         c.gridx = 0;
         c.gridy = 1;
         c.weightx = 0;
-        panel.add(new JLabel("Text channel:"), c);
+        panel.add(new JLabel(ui("textChannel") + ":"), c);
 
         c.gridx = 1;
         c.gridwidth = 2;
@@ -381,7 +432,7 @@ public class ControlPanelApp {
         c.gridx = 0;
         c.gridy = 2;
         c.weightx = 0;
-        panel.add(new JLabel("Song / URL:"), c);
+        panel.add(new JLabel(ui("songUrl") + ":"), c);
 
         c.gridx = 1;
         c.weightx = 1;
@@ -396,6 +447,7 @@ public class ControlPanelApp {
         controls.add(resumeButton);
         controls.add(skipButton);
         controls.add(stopPlaybackButton);
+        controls.add(earRapeToggleButton);
 
         c.gridx = 0;
         c.gridy = 3;
@@ -423,8 +475,16 @@ public class ControlPanelApp {
         resumeButton.setEnabled(enabled);
         skipButton.setEnabled(enabled);
         stopPlaybackButton.setEnabled(enabled);
+        earRapeToggleButton.setEnabled(enabled);
         refreshDesktopButton.setEnabled(enabled);
         launchPlayerButton.setEnabled(enabled);
+    }
+
+    private void setEarRapeEnabled(boolean enabled) {
+        earRapeEnabled = enabled;
+        if (earRapeToggleButton != null) {
+            earRapeToggleButton.setText("EarRape: " + ui(enabled ? "toggleOn" : "toggleOff"));
+        }
     }
 
     private void refreshDesktopSelectorsAsync() {
@@ -493,13 +553,13 @@ public class ControlPanelApp {
             Long guildId = selectedGuildId();
             Long channelId = selectedChannelId();
             if (guildId == null || channelId == null) {
-                SwingUtilities.invokeLater(() -> showError("Select guild and text channel first."));
+                SwingUtilities.invokeLater(() -> showError(ui("selectGuildTextChannelFirst")));
                 return;
             }
 
             try {
                 action.apply(runtime, guildId, channelId);
-                log("Desktop action: " + actionName);
+                log(ui("desktopAction") + ": " + actionName);
                 refreshPlayerSummaryAsync();
             } catch (Exception ex) {
                 SwingUtilities.invokeLater(() -> showError(ex.getMessage()));
@@ -540,7 +600,7 @@ public class ControlPanelApp {
     private void loadConfigIntoFields() {
         Path configPath = resolveConfigPath();
         if (!Files.exists(configPath)) {
-            log("No config found yet. Enter token and prefix, then press Start.");
+            log(ui("noConfigFound"));
             return;
         }
 
@@ -548,14 +608,16 @@ public class ControlPanelApp {
         try (InputStream in = Files.newInputStream(configPath)) {
             props.load(in);
         } catch (IOException e) {
-            log("Could not read config: " + e.getMessage());
+            log(ui("couldNotReadConfig") + ": " + e.getMessage());
             return;
         }
 
         tokenField.setText(props.getProperty("bot.token", ""));
         prefixField.setText(props.getProperty("bot.prefix", "!"));
         String languageCode = props.getProperty("bot.language", "en").trim();
+        String controlLanguageCode = props.getProperty("app.language", "en").trim();
         selectLanguage(languageCode);
+        selectControlPanelLanguage(controlLanguageCode);
     }
 
     private void saveConfigFromFields() throws IOException {
@@ -564,9 +626,11 @@ public class ControlPanelApp {
         String prefix = prefixField.getText().trim();
         LanguageOption selected = (LanguageOption) languageCombo.getSelectedItem();
         String language = selected == null ? "en" : selected.code();
+        LanguageOption selectedControl = (LanguageOption) controlPanelLanguageCombo.getSelectedItem();
+        String controlLanguage = selectedControl == null ? "en" : selectedControl.code();
 
         if (token.isEmpty()) {
-            throw new IllegalStateException("Token cannot be empty.");
+            throw new IllegalStateException(ui("tokenCannotBeEmpty"));
         }
 
         if (prefix.isEmpty()) {
@@ -588,6 +652,7 @@ public class ControlPanelApp {
         props.setProperty("bot.token", token);
         props.setProperty("bot.prefix", prefix);
         props.setProperty("bot.language", language);
+        props.setProperty("app.language", controlLanguage);
         props.putIfAbsent("youtube.poToken", "");
         props.putIfAbsent("youtube.visitorData", "");
 
@@ -595,7 +660,10 @@ public class ControlPanelApp {
             props.store(out, "ModernMusicBot settings");
         }
 
-        log("Config saved to: " + configPath.toAbsolutePath());
+        log(ui("configSavedTo") + ": " + configPath.toAbsolutePath());
+        if (!controlLanguage.equalsIgnoreCase(controlPanelLanguageCode)) {
+            log(ui("restartRequired"));
+        }
     }
 
     private Path resolveConfigPath() {
@@ -616,14 +684,14 @@ public class ControlPanelApp {
             showChecklistDialog();
             Files.writeString(FIRST_LAUNCH_MARKER, "shown\n");
         } catch (Exception ex) {
-            log("Could not show first-launch banner: " + ex.getMessage());
+            log(ui("couldNotShowFirstLaunch") + ": " + ex.getMessage());
         }
     }
 
     private JMenuBar buildMenuBar() {
         JMenuBar menuBar = new JMenuBar();
-        JMenu helpMenu = new JMenu("Help");
-        JMenuItem checklistItem = new JMenuItem("First Launch Checklist");
+        JMenu helpMenu = new JMenu(ui("help"));
+        JMenuItem checklistItem = new JMenuItem(ui("firstLaunchChecklist"));
         checklistItem.addActionListener(e -> showChecklistDialog());
         helpMenu.add(checklistItem);
         menuBar.add(helpMenu);
@@ -632,19 +700,19 @@ public class ControlPanelApp {
 
     private void showChecklistDialog() {
         String message = String.join("\n",
-                "Welcome to ModernMusicBot.",
+            ui("welcome"),
                 "",
-                "Before first run, make sure:",
-                "- You have a Discord bot token (Discord Developer Portal).",
-                "- The bot is invited with required permissions (voice + messages).",
-                "- Internet access is available.",
-                "- This app can write files in its folder (config + database).",
-                "- Optional for better YouTube reliability: set youtube.poToken and youtube.visitorData.",
+            ui("beforeFirstRun"),
+            "- " + ui("checkToken"),
+            "- " + ui("checkInvite"),
+            "- " + ui("checkInternet"),
+            "- " + ui("checkWrite"),
+            "- " + ui("checkYoutube"),
                 "",
-                "Desktop installers already include Java runtime."
+            ui("javaIncluded")
         );
 
-        JOptionPane.showMessageDialog(frame, message, "First Launch Checklist", JOptionPane.INFORMATION_MESSAGE);
+        JOptionPane.showMessageDialog(frame, message, ui("firstLaunchChecklist"), JOptionPane.INFORMATION_MESSAGE);
     }
 
     private boolean isDesktopOnboardingEnabled() {
@@ -661,8 +729,526 @@ public class ControlPanelApp {
     }
 
     private void showError(String message) {
-        JOptionPane.showMessageDialog(frame, message, "Error", JOptionPane.ERROR_MESSAGE);
+        JOptionPane.showMessageDialog(frame, message, ui("error"), JOptionPane.ERROR_MESSAGE);
     }
+
+    private void loadControlPanelLanguagePreference() {
+        Path configPath = resolveConfigPath();
+        if (!Files.exists(configPath)) {
+            controlPanelLanguageCode = "en";
+            return;
+        }
+
+        Properties props = new Properties();
+        try (InputStream in = Files.newInputStream(configPath)) {
+            props.load(in);
+            controlPanelLanguageCode = props.getProperty("app.language", "en").trim().toLowerCase();
+        } catch (Exception ignored) {
+            controlPanelLanguageCode = "en";
+        }
+    }
+
+    private String ui(String key) {
+        String lang = controlPanelLanguageCode == null ? "en" : controlPanelLanguageCode.toLowerCase();
+        return switch (lang) {
+            case "ru" -> uiRu(key);
+            case "hy" -> uiHy(key);
+            case "ka" -> uiKa(key);
+            case "az" -> uiAz(key);
+            case "kk" -> uiKk(key);
+            case "uz" -> uiUz(key);
+            case "uk" -> uiUk(key);
+            case "de" -> uiDe(key);
+            case "es" -> uiEs(key);
+            case "it" -> uiIt(key);
+            case "pt" -> uiPt(key);
+            case "zh" -> uiZh(key);
+            case "ja" -> uiJa(key);
+            default -> uiEn(key);
+        };
+    }
+
+    private String uiEn(String key) {
+        return switch (key) {
+            case "appTitle" -> "ModernMusicBot Control Panel";
+            case "settings" -> "Settings";
+            case "botToken" -> "Bot Token";
+            case "prefix" -> "Prefix";
+            case "botLanguage" -> "Bot Language";
+            case "controlPanelLanguage" -> "Control Panel Language";
+            case "start" -> "Start";
+            case "stop" -> "Stop";
+            case "saveSettings" -> "Save Settings";
+            case "console" -> "Console";
+            case "desktopPlayer" -> "Host Player (Desktop)";
+            case "addSong" -> "Add Song";
+            case "pause" -> "Pause";
+            case "resume" -> "Resume";
+            case "skip" -> "Skip";
+            case "refreshLists" -> "Refresh Lists";
+            case "launchPlayer" -> "Launch Player in Discord";
+            case "botNotRunning" -> "Bot is not running.";
+            case "guild" -> "Guild";
+            case "textChannel" -> "Text channel";
+            case "songUrl" -> "Song / URL";
+            case "restartRequired" -> "Restart app to apply control panel language change.";
+            case "error" -> "Error";
+            case "controlPanelReady" -> "Control panel ready.";
+            case "settingsSaved" -> "Settings saved.";
+            case "saveFailed" -> "Failed to save settings";
+            case "startingBot" -> "Starting bot...";
+            case "startFailed" -> "Start failed";
+            case "selectGuildChannelSong" -> "Select guild/channel and enter a song or URL.";
+            case "nothingFound" -> "Nothing found";
+            case "selectGuildTextChannelFirst" -> "Select guild and text channel first.";
+            case "noConfigFound" -> "No config found yet. Enter token and prefix, then press Start.";
+            case "couldNotReadConfig" -> "Could not read config";
+            case "tokenCannotBeEmpty" -> "Token cannot be empty.";
+            case "configSavedTo" -> "Config saved to";
+            case "couldNotShowFirstLaunch" -> "Could not show first-launch banner";
+            case "help" -> "Help";
+            case "firstLaunchChecklist" -> "First Launch Checklist";
+            case "welcome" -> "Welcome to ModernMusicBot.";
+            case "beforeFirstRun" -> "Before first run, make sure:";
+            case "checkToken" -> "You have a Discord bot token (Discord Developer Portal).";
+            case "checkInvite" -> "The bot is invited with required permissions (voice + messages).";
+            case "checkInternet" -> "Internet access is available.";
+            case "checkWrite" -> "This app can write files in its folder (config + database).";
+            case "checkYoutube" -> "Optional for better YouTube reliability: set youtube.poToken and youtube.visitorData.";
+            case "javaIncluded" -> "Desktop installers already include Java runtime.";
+            case "desktopSearchCancelled" -> "Desktop search cancelled";
+            case "desktopQueued" -> "Desktop queued";
+            case "playerPanelPosted" -> "Posted player panel to Discord.";
+            case "desktopAction" -> "Desktop action";
+            case "chooseTrackFor" -> "Choose a track for";
+            case "searchResults" -> "Search Results";
+            case "couldNotShowSearchChoices" -> "Could not show search choices";
+            case "toggleOn" -> "On";
+            case "toggleOff" -> "Off";
+            default -> key;
+        };
+    }
+
+    private String uiRu(String key) {
+        return switch (key) {
+            case "appTitle" -> "Панель управления ModernMusicBot";
+            case "settings" -> "Настройки";
+            case "botToken" -> "Токен бота";
+            case "prefix" -> "Префикс";
+            case "botLanguage" -> "Язык бота";
+            case "controlPanelLanguage" -> "Язык панели управления";
+            case "start" -> "Старт";
+            case "stop" -> "Стоп";
+            case "saveSettings" -> "Сохранить настройки";
+            case "console" -> "Консоль";
+            case "desktopPlayer" -> "Плеер хоста (Desktop)";
+            case "addSong" -> "Добавить песню";
+            case "pause" -> "Пауза";
+            case "resume" -> "Продолжить";
+            case "skip" -> "Пропуск";
+            case "refreshLists" -> "Обновить списки";
+            case "launchPlayer" -> "Запустить плеер в Discord";
+            case "botNotRunning" -> "Бот не запущен.";
+            case "guild" -> "Сервер";
+            case "textChannel" -> "Текстовый канал";
+            case "songUrl" -> "Песня / URL";
+            case "restartRequired" -> "Перезапустите приложение, чтобы применить язык панели.";
+            case "error" -> "Ошибка";
+            case "toggleOn" -> "Вкл";
+            case "toggleOff" -> "Выкл";
+            default -> uiEn(key);
+        };
+    }
+
+    private String uiLocalizedFallback(String key, String lang) {
+        String value = switch (key) {
+            case "controlPanelReady" -> byLang(lang, "Control panel ready.", "Կառավարման վահանակը պատրաստ է։", "მართვის პანელი მზადაა.", "İdarəetmə paneli hazırdır.", "Басқару панелі дайын.", "Boshqaruv paneli tayyor.", "Панель керування готова.", "Kontrollzentrum bereit.", "Panel de control listo.", "Pannello di controllo pronto.", "Painel de controle pronto.", "控制面板已就绪。", "コントロールパネルの準備ができました。");
+            case "settingsSaved" -> byLang(lang, "Settings saved.", "Կարգավորումները պահպանվել են։", "პარამეტრები შენახულია.", "Ayarlar saxlanıldı.", "Параметрлер сақталды.", "Sozlamalar saqlandi.", "Налаштування збережено.", "Einstellungen gespeichert.", "Configuración guardada.", "Impostazioni salvate.", "Configurações salvas.", "设置已保存。", "設定を保存しました。" );
+            case "saveFailed" -> byLang(lang, "Failed to save settings", "Չհաջողվեց պահպանել կարգավորումները", "პარამეტრების შენახვა ვერ მოხერხდა", "Ayarları saxlamaq alınmadı", "Параметрлерді сақтау сәтсіз", "Sozlamalarni saqlash muvaffaqiyatsiz", "Не вдалося зберегти налаштування", "Speichern der Einstellungen fehlgeschlagen", "Error al guardar la configuración", "Salvataggio impostazioni non riuscito", "Falha ao salvar configurações", "保存设置失败", "設定の保存に失敗しました");
+            case "startingBot" -> byLang(lang, "Starting bot...", "Բոտը մեկնարկում է...", "ბოტი იწყება...", "Bot işə salınır...", "Бот іске қосылуда...", "Bot ishga tushirilmoqda...", "Бот запускається...", "Bot wird gestartet...", "Iniciando bot...", "Avvio del bot...", "Iniciando bot...", "正在启动机器人...", "ボットを起動しています...");
+            case "startFailed" -> byLang(lang, "Start failed", "Գործարկումը ձախողվեց", "გაშვება ვერ მოხერხდა", "Başlatma uğursuz oldu", "Іске қосу сәтсіз", "Ishga tushirish muvaffaqiyatsiz", "Запуск не вдався", "Start fehlgeschlagen", "Error al iniciar", "Avvio non riuscito", "Falha ao iniciar", "启动失败", "起動に失敗しました");
+            case "selectGuildChannelSong" -> byLang(lang, "Select guild/channel and enter a song or URL.", "Ընտրեք սերվեր/ալիք և մուտքագրեք երգ կամ URL։", "აირჩიეთ სერვერი/არხი და შეიყვანეთ სიმღერა ან URL.", "Server/kanal seçin və mahnı və ya URL daxil edin.", "Сервер/арнаны таңдап, ән не URL енгізіңіз.", "Server/kanalni tanlang va qo‘shiq yoki URL kiriting.", "Виберіть сервер/канал і введіть пісню або URL.", "Server/Kanal wählen und Song oder URL eingeben.", "Selecciona servidor/canal e ingresa canción o URL.", "Seleziona server/canale e inserisci un brano o URL.", "Selecione servidor/canal e insira música ou URL.", "请选择服务器/频道并输入歌曲或 URL。", "サーバー/チャンネルを選択し、曲またはURLを入力してください。");
+            case "nothingFound" -> byLang(lang, "Nothing found", "Ոչինչ չի գտնվել", "ვერაფერი მოიძებნა", "Heç nə tapılmadı", "Ештеңе табылмады", "Hech narsa topilmadi", "Нічого не знайдено", "Nichts gefunden", "No se encontró nada", "Nessun risultato", "Nada encontrado", "未找到结果", "見つかりませんでした");
+            case "selectGuildTextChannelFirst" -> byLang(lang, "Select guild and text channel first.", "Սկզբում ընտրեք սերվերն ու տեքստային ալիքը։", "ჯერ აირჩიეთ სერვერი და ტექსტური არხი.", "Əvvəlcə server və mətn kanalını seçin.", "Алдымен сервер мен мәтін арнасын таңдаңыз.", "Avval server va matn kanalini tanlang.", "Спочатку виберіть сервер і текстовий канал.", "Zuerst Server und Textkanal auswählen.", "Primero selecciona servidor y canal de texto.", "Seleziona prima server e canale testuale.", "Selecione servidor e canal de texto primeiro.", "请先选择服务器和文字频道。", "先にサーバーとテキストチャンネルを選択してください。");
+            case "noConfigFound" -> byLang(lang, "No config found yet. Enter token and prefix, then press Start.", "Կոնֆիգը դեռ չկա։ Մուտքագրեք token և prefix, հետո սեղմեք Start։", "კონფიგი ჯერ არ არის. შეიყვანეთ ტოკენი და პრეფიქსი, შემდეგ დააჭირეთ დაწყებას.", "Hələ konfiq tapılmadı. Token və prefiks daxil edin, sonra Start edin.", "Конфиг әлі табылмады. Токен мен префикс енгізіп, Start басыңыз.", "Hali konfiguratsiya topilmadi. Token va prefiks kiriting, so‘ng Start bosing.", "Конфіг ще не знайдено. Введіть токен і префікс, потім натисніть Старт.", "Noch keine Konfiguration gefunden. Token und Präfix eingeben, dann Start drücken.", "Aún no hay configuración. Ingresa token y prefijo y pulsa Iniciar.", "Configurazione non trovata. Inserisci token e prefisso, poi Avvia.", "Configuração ainda não encontrada. Insira token e prefixo e clique em Iniciar.", "尚未找到配置。请输入令牌和前缀，然后点击启动。", "設定がまだありません。トークンとプレフィックスを入力して開始を押してください。");
+            case "tokenCannotBeEmpty" -> byLang(lang, "Token cannot be empty.", "Token-ը չի կարող դատարկ լինել։", "ტოკენი ცარიელი არ შეიძლება იყოს.", "Token boş ola bilməz.", "Токен бос болмауы керек.", "Token bo‘sh bo‘lishi mumkin emas.", "Токен не може бути порожнім.", "Token darf nicht leer sein.", "El token no puede estar vacío.", "Il token non può essere vuoto.", "O token não pode estar vazio.", "令牌不能为空。", "トークンは空にできません。");
+            case "restartRequired" -> byLang(lang, "Restart app to apply control panel language change.", "Հավելվածը վերագործարկեք՝ վահանակի լեզուն կիրառելու համար։", "პანელის ენის ცვლილების გამოსაყენებლად გადატვირთეთ აპი.", "Panel dilini tətbiq etmək üçün tətbiqi yenidən başladın.", "Панель тілін қолдану үшін қолданбаны қайта іске қосыңыз.", "Panel tili o‘zgarishini qo‘llash uchun ilovani qayta ishga tushiring.", "Перезапустіть застосунок, щоб застосувати мову панелі.", "App neu starten, um die Sprache des Kontrollpanels anzuwenden.", "Reinicia la app para aplicar el idioma del panel.", "Riavvia l'app per applicare la lingua del pannello.", "Reinicie o app para aplicar o idioma do painel.", "请重启应用以应用控制面板语言更改。", "コントロールパネル言語を適用するにはアプリを再起動してください。");
+            case "welcome" -> byLang(lang, "Welcome to ModernMusicBot.", "Բարի գալուստ ModernMusicBot։", "კეთილი იყოს თქვენი მობრძანება ModernMusicBot-ში.", "ModernMusicBot-a xoş gəlmisiniz.", "ModernMusicBot-қа қош келдіңіз.", "ModernMusicBot-ga xush kelibsiz.", "Ласкаво просимо до ModernMusicBot.", "Willkommen bei ModernMusicBot.", "Bienvenido a ModernMusicBot.", "Benvenuto in ModernMusicBot.", "Bem-vindo ao ModernMusicBot.", "欢迎使用 ModernMusicBot。", "ModernMusicBotへようこそ。");
+            case "beforeFirstRun" -> byLang(lang, "Before first run, make sure:", "Առաջին մեկնարկից առաջ համոզվեք, որ՝", "პირველ გაშვებამდე დარწმუნდით:", "İlk işə salmadan əvvəl yoxlayın:", "Алғашқы іске қоспас бұрын тексеріңіз:", "Birinchi ishga tushirishdan oldin tekshiring:", "Перед першим запуском переконайтесь:", "Vor dem ersten Start prüfen:", "Antes del primer inicio, asegúrate de:", "Prima del primo avvio, assicurati che:", "Antes da primeira execução, verifique:", "首次启动前请确认：", "初回起動前に次を確認してください：");
+            case "checkToken" -> byLang(lang, "You have a Discord bot token (Discord Developer Portal).", "Ունեք Discord bot token (Discord Developer Portal-ում)։", "გაქვთ Discord ბოტის ტოკენი (Discord Developer Portal).", "Discord bot tokeniniz var (Discord Developer Portal).", "Сізде Discord bot токені бар (Discord Developer Portal).", "Sizda Discord bot tokeni bor (Discord Developer Portal).", "У вас є токен Discord-бота (Discord Developer Portal).", "Discord-Bot-Token vorhanden (Discord Developer Portal).", "Tienes un token de bot de Discord (Discord Developer Portal).", "Hai un token bot Discord (Discord Developer Portal).", "Você tem um token de bot do Discord (Discord Developer Portal).", "你已拥有 Discord 机器人令牌（Developer Portal）。", "Discordボットトークン（Developer Portal）を用意してください。" );
+            case "checkInvite" -> byLang(lang, "The bot is invited with required permissions (voice + messages).", "Բոտը հրավիրված է անհրաժեշտ իրավունքներով (voice + messages)։", "ბოტი მოწვეულია საჭირო ნებართვებით (voice + messages).", "Bot tələb olunan icazələrlə dəvət olunub (voice + messages).", "Бот қажетті рұқсаттармен шақырылған (voice + messages).", "Bot kerakli ruxsatlar bilan taklif qilingan (voice + messages).", "Бота запрошено з потрібними правами (voice + messages).", "Bot mit nötigen Rechten eingeladen (voice + messages).", "El bot está invitado con permisos requeridos (voz + mensajes).", "Il bot è invitato con i permessi richiesti (voce + messaggi).", "O bot foi convidado com permissões necessárias (voz + mensagens).", "机器人已使用所需权限邀请（语音+消息）。", "ボットを必要権限（音声+メッセージ）で招待済み。" );
+            case "checkInternet" -> byLang(lang, "Internet access is available.", "Ինտերնետ կապը հասանելի է։", "ინტერნეტ წვდომა ხელმისაწვდომია.", "İnternet bağlantısı mövcuddur.", "Интернет қолжетімді.", "Internet mavjud.", "Є доступ до інтернету.", "Internetzugang vorhanden.", "Hay acceso a internet.", "Accesso a internet disponibile.", "Acesso à internet disponível.", "网络连接可用。", "インターネット接続が利用可能。" );
+            case "checkWrite" -> byLang(lang, "This app can write files in its folder (config + database).", "Հավելվածը կարող է գրել ֆայլեր իր պանակում (config + database)։", "აპს შეუძლია ფაილების ჩაწერა საკუთარ საქაღალდეში (config + database).", "Tətbiq öz qovluğuna fayl yaza bilir (config + database).", "Қолданба өз қалтасына файл жаза алады (config + database).", "Ilova o‘z papkasiga yozishi mumkin (config + database).", "Застосунок може записувати файли у свою папку (config + database).", "App kann Dateien im eigenen Ordner schreiben (config + database).", "La app puede escribir archivos en su carpeta (config + database).", "L'app può scrivere file nella sua cartella (config + database).", "O app pode gravar arquivos na própria pasta (config + database).", "应用可在其目录写入文件（配置+数据库）。", "アプリが自身のフォルダーに書き込めること（config + database）。" );
+            case "checkYoutube" -> byLang(lang, "Optional for better YouTube reliability: set youtube.poToken and youtube.visitorData.", "YouTube կայունության համար՝ ցանկության դեպքում լրացրեք youtube.poToken և youtube.visitorData։", "YouTube-ის სტაბილურობისთვის სურვილისამებრ შეავსეთ youtube.poToken და youtube.visitorData.", "YouTube sabitliyi üçün opsional: youtube.poToken və youtube.visitorData təyin edin.", "YouTube тұрақтылығы үшін қалауыңызша youtube.poToken және youtube.visitorData орнатыңыз.", "YouTube barqarorligi uchun ixtiyoriy: youtube.poToken va youtube.visitorData ni kiriting.", "Для стабільнішого YouTube за потреби задайте youtube.poToken і youtube.visitorData.", "Optional für bessere YouTube-Stabilität: youtube.poToken und youtube.visitorData setzen.", "Opcional para mejor estabilidad de YouTube: configurar youtube.poToken y youtube.visitorData.", "Opzionale per maggiore affidabilità YouTube: imposta youtube.poToken e youtube.visitorData.", "Opcional para melhor estabilidade do YouTube: defina youtube.poToken e youtube.visitorData.", "可选：为提高 YouTube 稳定性，设置 youtube.poToken 和 youtube.visitorData。", "YouTube安定性向上のため、必要に応じて youtube.poToken と youtube.visitorData を設定。" );
+            case "javaIncluded" -> byLang(lang, "Desktop installers already include Java runtime.", "Desktop տեղադրիչներն արդեն ներառում են Java runtime։", "Desktop ინსტალატორებში Java runtime უკვე შედის.", "Desktop quraşdırıcılarına Java runtime daxildir.", "Desktop орнатқыштарында Java runtime бар.", "Desktop o‘rnatgichlarda Java runtime bor.", "Desktop-інсталятори вже містять Java runtime.", "Desktop-Installer enthalten bereits Java Runtime.", "Los instaladores desktop ya incluyen Java runtime.", "Gli installer desktop includono già Java runtime.", "Os instaladores desktop já incluem Java runtime.", "桌面安装包已包含 Java 运行时。", "デスクトップインストーラーにはJavaランタイムが含まれています。" );
+            case "desktopSearchCancelled" -> byLang(lang, "Desktop search cancelled", "Desktop որոնումը չեղարկվեց", "Desktop ძიება გაუქმდა", "Desktop axtarışı ləğv edildi", "Desktop іздеу тоқтатылды", "Desktop qidiruvi bekor qilindi", "Desktop пошук скасовано", "Desktop-Suche abgebrochen", "Búsqueda desktop cancelada", "Ricerca desktop annullata", "Pesquisa desktop cancelada", "桌面搜索已取消", "デスクトップ検索をキャンセルしました");
+            case "desktopQueued" -> byLang(lang, "Desktop queued", "Desktop-ից հերթագրվեց", "Desktop-დან დაემატა რიგში", "Desktop-dan növbəyə əlavə edildi", "Desktop-тен кезекке қосылды", "Desktop'dan navbatga qo‘shildi", "Додано в чергу з Desktop", "Von Desktop in Warteschlange", "Agregado a cola desde desktop", "Aggiunto in coda da desktop", "Adicionado à fila pelo desktop", "已从桌面加入队列", "デスクトップからキューに追加");
+            case "playerPanelPosted" -> byLang(lang, "Posted player panel to Discord.", "Պլեյերի վահանակը ուղարկվեց Discord։", "პლეერის პანელი გაიგზავნა Discord-ში.", "Pleyer paneli Discord-a göndərildi.", "Плеер панелі Discord-қа жіберілді.", "Player panel Discord'ga yuborildi.", "Панель плеєра відправлено в Discord.", "Player-Panel in Discord gepostet.", "Panel del reproductor enviado a Discord.", "Pannello player inviato su Discord.", "Painel do player enviado ao Discord.", "播放器面板已发送到 Discord。", "プレーヤーパネルをDiscordに送信しました。");
+            case "desktopAction" -> byLang(lang, "Desktop action", "Desktop գործողություն", "Desktop ქმედება", "Desktop əməliyyatı", "Desktop әрекеті", "Desktop amali", "Desktop дія", "Desktop-Aktion", "Acción de desktop", "Azione desktop", "Ação desktop", "桌面操作", "デスクトップ操作");
+            case "chooseTrackFor" -> byLang(lang, "Choose a track for", "Ընտրեք թրեք", "აირჩიეთ ტრეკი", "Trek seçin", "Тректі таңдаңыз", "Trekni tanlang", "Оберіть трек для", "Track auswählen für", "Elegir pista para", "Scegli una traccia per", "Escolha uma faixa para", "为以下内容选择曲目", "次の曲を選択");
+            case "searchResults" -> byLang(lang, "Search Results", "Որոնման արդյունքներ", "ძიების შედეგები", "Axtarış nəticələri", "Іздеу нәтижелері", "Qidiruv natijalari", "Результати пошуку", "Suchergebnisse", "Resultados de búsqueda", "Risultati di ricerca", "Resultados da pesquisa", "搜索结果", "検索結果");
+            case "couldNotShowSearchChoices" -> byLang(lang, "Could not show search choices", "Չհաջողվեց ցուցադրել որոնման տարբերակները", "ძიების ვარიანტების ჩვენება ვერ მოხერხდა", "Axtarış seçimlərini göstərmək olmadı", "Іздеу нұсқаларын көрсету мүмкін болмады", "Qidiruv variantlarini ko‘rsatib bo‘lmadi", "Не вдалося показати варіанти пошуку", "Suchoptionen konnten nicht angezeigt werden", "No se pudieron mostrar opciones de búsqueda", "Impossibile mostrare le opzioni di ricerca", "Não foi possível mostrar opções de pesquisa", "无法显示搜索选项", "検索候補を表示できませんでした");
+            case "toggleOn" -> byLang(lang, "On", "Մի", "ჩართ.", "Açıq", "Қосулы", "Yoqilgan", "Увімк.", "An", "Encendido", "On", "Ligado", "开", "オン");
+            case "toggleOff" -> byLang(lang, "Off", "Անջ.", "გამორთ.", "Söndür", "Өшірулі", "O‘chirilgan", "Вимк.", "Aus", "Apagado", "Off", "Desligado", "关", "オフ");
+            default -> null;
+        };
+
+        return value == null ? uiEn(key) : value;
+    }
+
+    private String byLang(String lang, String en, String hy, String ka, String az, String kk, String uz, String uk, String de, String es, String it, String pt, String zh, String ja) {
+        return switch (lang) {
+            case "hy" -> hy;
+            case "ka" -> ka;
+            case "az" -> az;
+            case "kk" -> kk;
+            case "uz" -> uz;
+            case "uk" -> uk;
+            case "de" -> de;
+            case "es" -> es;
+            case "it" -> it;
+            case "pt" -> pt;
+            case "zh" -> zh;
+            case "ja" -> ja;
+            default -> en;
+        };
+    }
+
+    private String uiHy(String key) { return switch (key) {
+        case "appTitle" -> "ModernMusicBot կառավարման վահանակ";
+        case "settings" -> "Կարգավորումներ";
+        case "botToken" -> "Բոտի թոքեն";
+        case "prefix" -> "Նախածանց";
+        case "botLanguage" -> "Բոտի լեզու";
+        case "controlPanelLanguage" -> "Կառավարման վահանակի լեզու";
+        case "start" -> "Սկսել";
+        case "stop" -> "Կանգնեցնել";
+        case "saveSettings" -> "Պահպանել կարգավորումները";
+        case "console" -> "Վահանակ";
+        case "desktopPlayer" -> "Հոսթ պլեյեր (Desktop)";
+        case "addSong" -> "Ավելացնել երգ";
+        case "pause" -> "Դադար";
+        case "resume" -> "Շարունակել";
+        case "skip" -> "Բաց թողնել";
+        case "refreshLists" -> "Թարմացնել ցուցակները";
+        case "launchPlayer" -> "Բացել պլեյերը Discord-ում";
+        case "botNotRunning" -> "Բոտը գործարկված չէ։";
+        case "guild" -> "Սերվեր";
+        case "textChannel" -> "Տեքստային ալիք";
+        case "songUrl" -> "Երգ / URL";
+        case "help" -> "Օգնություն";
+        case "error" -> "Սխալ";
+        case "firstLaunchChecklist" -> "Առաջին գործարկման ստուգաթերթ";
+        default -> uiLocalizedFallback(key, "hy");
+    }; }
+
+    private String uiKa(String key) { return switch (key) {
+        case "appTitle" -> "ModernMusicBot მართვის პანელი";
+        case "settings" -> "პარამეტრები";
+        case "botToken" -> "ბოტის ტოკენი";
+        case "prefix" -> "პრეფიქსი";
+        case "botLanguage" -> "ბოტის ენა";
+        case "controlPanelLanguage" -> "მართვის პანელის ენა";
+        case "start" -> "დაწყება";
+        case "stop" -> "გაჩერება";
+        case "saveSettings" -> "პარამეტრების შენახვა";
+        case "console" -> "კონსოლი";
+        case "desktopPlayer" -> "ჰოსტის პლეერი (Desktop)";
+        case "addSong" -> "სიმღერის დამატება";
+        case "pause" -> "პაუზა";
+        case "resume" -> "გაგრძელება";
+        case "skip" -> "გამოტოვება";
+        case "refreshLists" -> "სიების განახლება";
+        case "launchPlayer" -> "პლეერის გაშვება Discord-ში";
+        case "botNotRunning" -> "ბოტი გაშვებული არ არის.";
+        case "guild" -> "სერვერი";
+        case "textChannel" -> "ტექსტური არხი";
+        case "songUrl" -> "სიმღერა / URL";
+        case "help" -> "დახმარება";
+        case "error" -> "შეცდომა";
+        case "firstLaunchChecklist" -> "პირველი გაშვების სია";
+        default -> uiLocalizedFallback(key, "ka");
+    }; }
+
+    private String uiAz(String key) { return switch (key) {
+        case "appTitle" -> "ModernMusicBot idarəetmə paneli";
+        case "settings" -> "Ayarlar";
+        case "botToken" -> "Bot tokeni";
+        case "prefix" -> "Prefiks";
+        case "botLanguage" -> "Bot dili";
+        case "controlPanelLanguage" -> "İdarəetmə paneli dili";
+        case "start" -> "Başlat";
+        case "stop" -> "Dayandır";
+        case "saveSettings" -> "Ayarları saxla";
+        case "console" -> "Konsol";
+        case "desktopPlayer" -> "Host pleyer (Desktop)";
+        case "addSong" -> "Mahnı əlavə et";
+        case "pause" -> "Pauza";
+        case "resume" -> "Davam et";
+        case "skip" -> "Keç";
+        case "refreshLists" -> "Siyahıları yenilə";
+        case "launchPlayer" -> "Discord-da pleyeri aç";
+        case "botNotRunning" -> "Bot işləmir.";
+        case "guild" -> "Server";
+        case "textChannel" -> "Mətn kanalı";
+        case "songUrl" -> "Mahnı / URL";
+        case "help" -> "Kömək";
+        case "error" -> "Xəta";
+        case "firstLaunchChecklist" -> "İlk açılış yoxlama siyahısı";
+        default -> uiLocalizedFallback(key, "az");
+    }; }
+
+    private String uiKk(String key) { return switch (key) {
+        case "appTitle" -> "ModernMusicBot басқару панелі";
+        case "settings" -> "Параметрлер";
+        case "botToken" -> "Бот токені";
+        case "prefix" -> "Префикс";
+        case "botLanguage" -> "Бот тілі";
+        case "controlPanelLanguage" -> "Басқару панелінің тілі";
+        case "start" -> "Бастау";
+        case "stop" -> "Тоқтату";
+        case "saveSettings" -> "Параметрлерді сақтау";
+        case "console" -> "Консоль";
+        case "desktopPlayer" -> "Хост плеері (Desktop)";
+        case "addSong" -> "Ән қосу";
+        case "pause" -> "Пауза";
+        case "resume" -> "Жалғастыру";
+        case "skip" -> "Өткізу";
+        case "refreshLists" -> "Тізімдерді жаңарту";
+        case "launchPlayer" -> "Discord-та плеерді ашу";
+        case "botNotRunning" -> "Бот іске қосылмаған.";
+        case "guild" -> "Сервер";
+        case "textChannel" -> "Мәтін арнасы";
+        case "songUrl" -> "Ән / URL";
+        case "help" -> "Көмек";
+        case "error" -> "Қате";
+        case "firstLaunchChecklist" -> "Алғашқы іске қосу тізімі";
+        default -> uiLocalizedFallback(key, "kk");
+    }; }
+
+    private String uiUz(String key) { return switch (key) {
+        case "appTitle" -> "ModernMusicBot boshqaruv paneli";
+        case "settings" -> "Sozlamalar";
+        case "botToken" -> "Bot tokeni";
+        case "prefix" -> "Prefiks";
+        case "botLanguage" -> "Bot tili";
+        case "controlPanelLanguage" -> "Boshqaruv paneli tili";
+        case "start" -> "Boshlash";
+        case "stop" -> "Toʻxtatish";
+        case "saveSettings" -> "Sozlamalarni saqlash";
+        case "console" -> "Konsol";
+        case "desktopPlayer" -> "Host pleyeri (Desktop)";
+        case "addSong" -> "Qoʻshiq qoʻshish";
+        case "pause" -> "Pauza";
+        case "resume" -> "Davom ettirish";
+        case "skip" -> "Oʻtkazib yuborish";
+        case "refreshLists" -> "Roʻyxatlarni yangilash";
+        case "launchPlayer" -> "Discord-da pleyerni ochish";
+        case "botNotRunning" -> "Bot ishga tushmagan.";
+        case "guild" -> "Server";
+        case "textChannel" -> "Matn kanali";
+        case "songUrl" -> "Qoʻshiq / URL";
+        case "help" -> "Yordam";
+        case "error" -> "Xatolik";
+        case "firstLaunchChecklist" -> "Birinchi ishga tushirish roʻyxati";
+        default -> uiLocalizedFallback(key, "uz");
+    }; }
+
+    private String uiUk(String key) { return switch (key) {
+        case "appTitle" -> "Панель керування ModernMusicBot";
+        case "settings" -> "Налаштування";
+        case "botToken" -> "Токен бота";
+        case "prefix" -> "Префікс";
+        case "botLanguage" -> "Мова бота";
+        case "controlPanelLanguage" -> "Мова панелі керування";
+        case "start" -> "Старт";
+        case "stop" -> "Стоп";
+        case "saveSettings" -> "Зберегти налаштування";
+        case "console" -> "Консоль";
+        case "desktopPlayer" -> "Плеєр хоста (Desktop)";
+        case "addSong" -> "Додати пісню";
+        case "pause" -> "Пауза";
+        case "resume" -> "Продовжити";
+        case "skip" -> "Пропустити";
+        case "refreshLists" -> "Оновити списки";
+        case "launchPlayer" -> "Запустити плеєр у Discord";
+        case "botNotRunning" -> "Бот не запущено.";
+        case "guild" -> "Сервер";
+        case "textChannel" -> "Текстовий канал";
+        case "songUrl" -> "Пісня / URL";
+        case "help" -> "Довідка";
+        case "error" -> "Помилка";
+        case "firstLaunchChecklist" -> "Чеклист першого запуску";
+        default -> uiLocalizedFallback(key, "uk");
+    }; }
+
+    private String uiDe(String key) { return switch (key) {
+        case "appTitle" -> "ModernMusicBot Kontrollzentrum";
+        case "settings" -> "Einstellungen";
+        case "botToken" -> "Bot-Token";
+        case "prefix" -> "Präfix";
+        case "botLanguage" -> "Bot-Sprache";
+        case "controlPanelLanguage" -> "Sprache des Kontrollpanels";
+        case "start" -> "Start";
+        case "stop" -> "Stopp";
+        case "saveSettings" -> "Einstellungen speichern";
+        case "console" -> "Konsole";
+        case "desktopPlayer" -> "Host-Player (Desktop)";
+        case "addSong" -> "Song hinzufügen";
+        case "pause" -> "Pause";
+        case "resume" -> "Fortsetzen";
+        case "skip" -> "Überspringen";
+        case "refreshLists" -> "Listen aktualisieren";
+        case "launchPlayer" -> "Player in Discord starten";
+        case "botNotRunning" -> "Bot läuft nicht.";
+        case "guild" -> "Server";
+        case "textChannel" -> "Textkanal";
+        case "songUrl" -> "Song / URL";
+        case "help" -> "Hilfe";
+        case "error" -> "Fehler";
+        case "firstLaunchChecklist" -> "Checkliste für den ersten Start";
+        default -> uiLocalizedFallback(key, "de");
+    }; }
+
+    private String uiEs(String key) { return switch (key) {
+        case "appTitle" -> "Panel de control de ModernMusicBot";
+        case "settings" -> "Configuración";
+        case "botToken" -> "Token del bot";
+        case "prefix" -> "Prefijo";
+        case "botLanguage" -> "Idioma del bot";
+        case "controlPanelLanguage" -> "Idioma del panel de control";
+        case "start" -> "Iniciar";
+        case "stop" -> "Detener";
+        case "saveSettings" -> "Guardar configuración";
+        case "console" -> "Consola";
+        case "desktopPlayer" -> "Reproductor host (Desktop)";
+        case "addSong" -> "Agregar canción";
+        case "pause" -> "Pausa";
+        case "resume" -> "Reanudar";
+        case "skip" -> "Saltar";
+        case "refreshLists" -> "Actualizar listas";
+        case "launchPlayer" -> "Lanzar reproductor en Discord";
+        case "botNotRunning" -> "El bot no está en ejecución.";
+        case "guild" -> "Servidor";
+        case "textChannel" -> "Canal de texto";
+        case "songUrl" -> "Canción / URL";
+        case "help" -> "Ayuda";
+        case "error" -> "Error";
+        case "firstLaunchChecklist" -> "Lista de verificación del primer inicio";
+        default -> uiLocalizedFallback(key, "es");
+    }; }
+
+    private String uiIt(String key) { return switch (key) {
+        case "appTitle" -> "Pannello di controllo ModernMusicBot";
+        case "settings" -> "Impostazioni";
+        case "botToken" -> "Token del bot";
+        case "prefix" -> "Prefisso";
+        case "botLanguage" -> "Lingua del bot";
+        case "controlPanelLanguage" -> "Lingua del pannello di controllo";
+        case "start" -> "Avvia";
+        case "stop" -> "Arresta";
+        case "saveSettings" -> "Salva impostazioni";
+        case "console" -> "Console";
+        case "desktopPlayer" -> "Player host (Desktop)";
+        case "addSong" -> "Aggiungi brano";
+        case "pause" -> "Pausa";
+        case "resume" -> "Riprendi";
+        case "skip" -> "Salta";
+        case "refreshLists" -> "Aggiorna elenchi";
+        case "launchPlayer" -> "Avvia player in Discord";
+        case "botNotRunning" -> "Il bot non è in esecuzione.";
+        case "guild" -> "Server";
+        case "textChannel" -> "Canale testuale";
+        case "songUrl" -> "Brano / URL";
+        case "help" -> "Aiuto";
+        case "error" -> "Errore";
+        case "firstLaunchChecklist" -> "Checklist primo avvio";
+        default -> uiLocalizedFallback(key, "it");
+    }; }
+
+    private String uiPt(String key) { return switch (key) {
+        case "appTitle" -> "Painel de controle do ModernMusicBot";
+        case "settings" -> "Configurações";
+        case "botToken" -> "Token do bot";
+        case "prefix" -> "Prefixo";
+        case "botLanguage" -> "Idioma do bot";
+        case "controlPanelLanguage" -> "Idioma do painel de controle";
+        case "start" -> "Iniciar";
+        case "stop" -> "Parar";
+        case "saveSettings" -> "Salvar configurações";
+        case "console" -> "Console";
+        case "desktopPlayer" -> "Player host (Desktop)";
+        case "addSong" -> "Adicionar música";
+        case "pause" -> "Pausar";
+        case "resume" -> "Retomar";
+        case "skip" -> "Pular";
+        case "refreshLists" -> "Atualizar listas";
+        case "launchPlayer" -> "Iniciar player no Discord";
+        case "botNotRunning" -> "O bot não está em execução.";
+        case "guild" -> "Servidor";
+        case "textChannel" -> "Canal de texto";
+        case "songUrl" -> "Música / URL";
+        case "help" -> "Ajuda";
+        case "error" -> "Erro";
+        case "firstLaunchChecklist" -> "Checklist da primeira execução";
+        default -> uiLocalizedFallback(key, "pt");
+    }; }
+
+    private String uiZh(String key) { return switch (key) {
+        case "appTitle" -> "ModernMusicBot 控制面板";
+        case "settings" -> "设置";
+        case "botToken" -> "机器人令牌";
+        case "prefix" -> "前缀";
+        case "botLanguage" -> "机器人语言";
+        case "controlPanelLanguage" -> "控制面板语言";
+        case "start" -> "启动";
+        case "stop" -> "停止";
+        case "saveSettings" -> "保存设置";
+        case "console" -> "控制台";
+        case "desktopPlayer" -> "主机播放器（桌面）";
+        case "addSong" -> "添加歌曲";
+        case "pause" -> "暂停";
+        case "resume" -> "继续";
+        case "skip" -> "跳过";
+        case "refreshLists" -> "刷新列表";
+        case "launchPlayer" -> "在 Discord 中启动播放器";
+        case "botNotRunning" -> "机器人未运行。";
+        case "guild" -> "服务器";
+        case "textChannel" -> "文字频道";
+        case "songUrl" -> "歌曲 / URL";
+        case "help" -> "帮助";
+        case "error" -> "错误";
+        case "firstLaunchChecklist" -> "首次启动清单";
+        default -> uiLocalizedFallback(key, "zh");
+    }; }
+
+    private String uiJa(String key) { return switch (key) {
+        case "appTitle" -> "ModernMusicBot コントロールパネル";
+        case "settings" -> "設定";
+        case "botToken" -> "ボットトークン";
+        case "prefix" -> "プレフィックス";
+        case "botLanguage" -> "ボット言語";
+        case "controlPanelLanguage" -> "コントロールパネル言語";
+        case "start" -> "開始";
+        case "stop" -> "停止";
+        case "saveSettings" -> "設定を保存";
+        case "console" -> "コンソール";
+        case "desktopPlayer" -> "ホストプレーヤー (Desktop)";
+        case "addSong" -> "曲を追加";
+        case "pause" -> "一時停止";
+        case "resume" -> "再開";
+        case "skip" -> "スキップ";
+        case "refreshLists" -> "リストを更新";
+        case "launchPlayer" -> "Discordでプレーヤーを起動";
+        case "botNotRunning" -> "ボットは起動していません。";
+        case "guild" -> "サーバー";
+        case "textChannel" -> "テキストチャンネル";
+        case "songUrl" -> "曲 / URL";
+        case "help" -> "ヘルプ";
+        case "error" -> "エラー";
+        case "firstLaunchChecklist" -> "初回起動チェックリスト";
+        default -> uiLocalizedFallback(key, "ja");
+    }; }
 
     private void selectLanguage(String languageCode) {
         LanguageOption option = Arrays.stream(LANGUAGE_OPTIONS)
@@ -670,6 +1256,17 @@ public class ControlPanelApp {
                 .findFirst()
                 .orElse(LANGUAGE_OPTIONS[0]);
         languageCombo.setSelectedItem(option);
+    }
+
+    private void selectControlPanelLanguage(String languageCode) {
+        if (controlPanelLanguageCombo == null) {
+            return;
+        }
+        LanguageOption option = Arrays.stream(LANGUAGE_OPTIONS)
+                .filter(item -> item.code().equalsIgnoreCase(languageCode))
+                .findFirst()
+                .orElse(LANGUAGE_OPTIONS[0]);
+        controlPanelLanguageCombo.setSelectedItem(option);
     }
 
     private boolean isSearchQuery(String query) {
@@ -691,8 +1288,8 @@ public class ControlPanelApp {
                         .toArray(String[]::new);
                 String choice = (String) JOptionPane.showInputDialog(
                         frame,
-                        "Choose a track for: " + query,
-                        "Search Results",
+                        ui("chooseTrackFor") + ": " + query,
+                        ui("searchResults"),
                         JOptionPane.PLAIN_MESSAGE,
                         null,
                         items,
@@ -711,7 +1308,7 @@ public class ControlPanelApp {
                 }
             });
         } catch (Exception ex) {
-            throw new IllegalStateException("Could not show search choices: " + ex.getMessage(), ex);
+            throw new IllegalStateException(ui("couldNotShowSearchChoices") + ": " + ex.getMessage(), ex);
         }
 
         return selected.get();
