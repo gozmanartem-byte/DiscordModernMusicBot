@@ -8,6 +8,9 @@ import java.awt.GridBagLayout;
 import java.awt.Image;
 import java.awt.Insets;
 import java.awt.Taskbar;
+import java.awt.Toolkit;
+import java.awt.datatransfer.StringSelection;
+import java.awt.event.KeyEvent;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -78,6 +81,8 @@ public class ControlPanelApp {
     private JButton startButton;
     private JButton stopButton;
     private JButton saveButton;
+    private JButton clearConsoleButton;
+    private JButton copySummaryButton;
     private JComboBox<GuildOption> guildCombo;
     private JComboBox<ChannelOption> channelCombo;
     private JTextField addSongField;
@@ -170,13 +175,19 @@ public class ControlPanelApp {
         startButton = new JButton(ui("start"));
         stopButton = new JButton(ui("stop"));
         saveButton = new JButton(ui("saveSettings"));
+        clearConsoleButton = new JButton("Clear Console");
+        copySummaryButton = new JButton("Copy Summary");
         stylePrimaryButton(startButton);
         styleSecondaryButton(stopButton);
         styleSecondaryButton(saveButton);
+        styleSecondaryButton(clearConsoleButton);
+        styleSecondaryButton(copySummaryButton);
         stopButton.setEnabled(false);
         buttons.add(startButton);
         buttons.add(stopButton);
         buttons.add(saveButton);
+        buttons.add(clearConsoleButton);
+        buttons.add(copySummaryButton);
 
         console = new JTextArea();
         console.setEditable(false);
@@ -206,6 +217,7 @@ public class ControlPanelApp {
 
         loadConfigIntoFields();
         wireActions();
+        wireKeyboardShortcuts();
         frame.setLocationRelativeTo(null);
         frame.setVisible(true);
         log(ui("controlPanelReady"));
@@ -291,6 +303,22 @@ public class ControlPanelApp {
                 }
             });
         }));
+
+        clearConsoleButton.addActionListener(e -> console.setText(""));
+
+        copySummaryButton.addActionListener(e -> {
+            if (playerSummaryArea == null) {
+                showError("Player summary is not available on this platform mode.");
+                return;
+            }
+            String summary = playerSummaryArea.getText();
+            if (summary == null || summary.isBlank()) {
+                showError("Nothing to copy yet.");
+                return;
+            }
+            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(summary), null);
+            log("Player summary copied to clipboard.");
+        });
 
         if (isDesktopOnboardingEnabled()) {
             guildCombo.addActionListener(ignored -> refreshChannelsAsync());
@@ -512,6 +540,20 @@ public class ControlPanelApp {
             earRapeToggleButton.setBackground(enabled ? new Color(192, 57, 43) : new Color(232, 237, 244));
             earRapeToggleButton.setForeground(enabled ? new Color(255, 247, 246) : brandText);
         }
+    }
+
+    private void wireKeyboardShortcuts() {
+        int menuMask = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+        frame.getRootPane().registerKeyboardAction(
+            e -> {
+                if (addSongField != null && addSongField.isEnabled()) {
+                    addSongField.requestFocusInWindow();
+                    addSongField.selectAll();
+                }
+            },
+            javax.swing.KeyStroke.getKeyStroke(KeyEvent.VK_L, menuMask),
+            javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW
+        );
     }
 
     private void applyBrandTheme() {
