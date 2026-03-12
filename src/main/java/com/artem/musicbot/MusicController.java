@@ -63,6 +63,9 @@ public class MusicController {
     private final AtomicLong loadSuccessCount = new AtomicLong();
     private final AtomicLong loadFailureCount = new AtomicLong();
     private final AtomicLong noMatchesCount = new AtomicLong();
+    private final AtomicLong panelCreateCount = new AtomicLong();
+    private final AtomicLong panelEditCount = new AtomicLong();
+    private final AtomicLong panelSkipCount = new AtomicLong();
     private final AtomicLong searchSelectionCounter = new AtomicLong();
     private final Map<String, PendingSearch> pendingSearches = new ConcurrentHashMap<>();
     private final Map<Long, Long> playerPanelMessageIds = new ConcurrentHashMap<>();
@@ -734,7 +737,10 @@ public class MusicController {
                 "Health:",
                 "trackedGuilds=" + guildCount,
                 "activePlayers=" + activePlayers,
-                "managedQueues=" + guildCount);
+            "managedQueues=" + guildCount,
+            "panelCreates=" + panelCreateCount.get(),
+            "panelEdits=" + panelEditCount.get(),
+            "panelSkips=" + panelSkipCount.get());
     }
 
     public void sendPlayerPanel(TextChannel channel, String prefix) {
@@ -793,7 +799,10 @@ public class MusicController {
                 "lastFrameBytes=" + musicManager.sendHandler.getLastDataLength(),
                 "paused=" + musicManager.player.isPaused(),
                 "volume=" + musicManager.player.getVolume(),
-                "bassLevel=" + musicManager.getBassLevel());
+                "bassLevel=" + musicManager.getBassLevel(),
+                "panelCreates=" + panelCreateCount.get(),
+                "panelEdits=" + panelEditCount.get(),
+                "panelSkips=" + panelSkipCount.get());
 
         channel.sendMessage(message).queue();
     }
@@ -951,6 +960,7 @@ public class MusicController {
         Long messageId = playerPanelMessageIds.get(guildId);
         String lastSignature = playerPanelLastRenderedSignature.get(guildId);
         if (messageId != null && nextSignature.equals(lastSignature)) {
+            panelSkipCount.incrementAndGet();
             finishPlayerPanelRefresh(guild, inFlight, pending);
             return;
         }
@@ -961,6 +971,7 @@ public class MusicController {
                             .setComponents(playerComponents(guildI18n(channel.getGuild())))
                             .queue(
                         ignored -> {
+                        panelEditCount.incrementAndGet();
                         playerPanelLastRenderedSignature.put(guildId, nextSignature);
                         finishPlayerPanelRefresh(guild, inFlight, pending);
                         },
@@ -985,6 +996,7 @@ public class MusicController {
         channel.sendMessageEmbeds(buildPlayerEmbed(channel.getGuild(), prefix))
             .setComponents(playerComponents(guildI18n(channel.getGuild())))
                 .queue(message -> {
+                    panelCreateCount.incrementAndGet();
                     playerPanelChannelIds.put(guildId, channel.getIdLong());
                     playerPanelMessageIds.put(guildId, message.getIdLong());
                     playerPanelLastRenderedSignature.put(guildId, buildPlayerPanelSignature(channel.getGuild(), prefix));
