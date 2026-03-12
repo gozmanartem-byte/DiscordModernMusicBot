@@ -1,6 +1,7 @@
 package com.artem.musicbot;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
@@ -38,6 +39,7 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import javax.swing.UIManager;
 import javax.swing.WindowConstants;
 
 public class ControlPanelApp {
@@ -91,6 +93,10 @@ public class ControlPanelApp {
     private JTextArea playerSummaryArea;
     private Timer desktopRefreshTimer;
     private String controlPanelLanguageCode = "en";
+    private Color brandAccent = new Color(52, 120, 214);
+    private Color brandText = new Color(22, 29, 36);
+    private Color brandBackground = new Color(236, 242, 248);
+    private Color brandPanel = new Color(248, 251, 255);
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> new ControlPanelApp().show());
@@ -98,10 +104,12 @@ public class ControlPanelApp {
 
     private void show() {
         loadControlPanelLanguagePreference();
+        applyBrandTheme();
         frame = new JFrame(ui("appTitle"));
         applyAppIcon();
         frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         frame.setLayout(new BorderLayout(10, 10));
+        frame.getContentPane().setBackground(brandBackground);
 
         if (isDesktopOnboardingEnabled()) {
             frame.setJMenuBar(buildMenuBar());
@@ -162,6 +170,9 @@ public class ControlPanelApp {
         startButton = new JButton(ui("start"));
         stopButton = new JButton(ui("stop"));
         saveButton = new JButton(ui("saveSettings"));
+        stylePrimaryButton(startButton);
+        styleSecondaryButton(stopButton);
+        styleSecondaryButton(saveButton);
         stopButton.setEnabled(false);
         buttons.add(startButton);
         buttons.add(stopButton);
@@ -169,6 +180,8 @@ public class ControlPanelApp {
 
         console = new JTextArea();
         console.setEditable(false);
+        console.setBackground(new Color(18, 24, 32));
+        console.setForeground(new Color(220, 233, 246));
         JScrollPane scrollPane = new JScrollPane(console);
         scrollPane.setBorder(BorderFactory.createTitledBorder(ui("console")));
 
@@ -392,16 +405,26 @@ public class ControlPanelApp {
         channelCombo = new JComboBox<>();
         addSongField = new JTextField();
         addSongButton = new JButton(ui("addSong"));
+        stylePrimaryButton(addSongButton);
         pauseButton = new JButton(ui("pause"));
         resumeButton = new JButton(ui("resume"));
         skipButton = new JButton(ui("skip"));
         stopPlaybackButton = new JButton(ui("stop"));
+        styleSecondaryButton(pauseButton);
+        styleSecondaryButton(resumeButton);
+        styleSecondaryButton(skipButton);
+        styleSecondaryButton(stopPlaybackButton);
         earRapeToggleButton = new JButton();
+        styleSecondaryButton(earRapeToggleButton);
         setEarRapeEnabled(false);
         refreshDesktopButton = new JButton(ui("refreshLists"));
         launchPlayerButton = new JButton(ui("launchPlayer"));
+        styleSecondaryButton(refreshDesktopButton);
+        stylePrimaryButton(launchPlayerButton);
         playerSummaryArea = new JTextArea(16, 58);
         playerSummaryArea.setEditable(false);
+        playerSummaryArea.setBackground(new Color(20, 27, 36));
+        playerSummaryArea.setForeground(new Color(218, 232, 246));
         playerSummaryArea.setText(ui("botNotRunning"));
 
         c.gridx = 0;
@@ -486,7 +509,104 @@ public class ControlPanelApp {
         earRapeEnabled = enabled;
         if (earRapeToggleButton != null) {
             earRapeToggleButton.setText("EarRape: " + ui(enabled ? "toggleOn" : "toggleOff"));
+            earRapeToggleButton.setBackground(enabled ? new Color(192, 57, 43) : new Color(232, 237, 244));
+            earRapeToggleButton.setForeground(enabled ? new Color(255, 247, 246) : brandText);
         }
+    }
+
+    private void applyBrandTheme() {
+        brandAccent = resolveAccentFromIcon();
+        brandText = new Color(22, 29, 36);
+        brandBackground = tintColor(brandAccent, 0.90f);
+        brandPanel = tintColor(brandAccent, 0.95f);
+
+        UIManager.put("Panel.background", brandPanel);
+        UIManager.put("OptionPane.background", brandPanel);
+        UIManager.put("Label.foreground", brandText);
+        UIManager.put("Button.background", new Color(232, 237, 244));
+        UIManager.put("Button.foreground", brandText);
+        UIManager.put("TextField.background", Color.WHITE);
+        UIManager.put("PasswordField.background", Color.WHITE);
+        UIManager.put("ComboBox.background", Color.WHITE);
+        UIManager.put("TextArea.background", Color.WHITE);
+        UIManager.put("TextArea.foreground", brandText);
+        UIManager.put("TitledBorder.titleColor", brandText);
+    }
+
+    private Color resolveAccentFromIcon() {
+        try (InputStream iconStream = ControlPanelApp.class.getResourceAsStream("/app-icon.png")) {
+            if (iconStream == null) {
+                return new Color(52, 120, 214);
+            }
+            var image = ImageIO.read(iconStream);
+            if (image == null) {
+                return new Color(52, 120, 214);
+            }
+
+            long sumR = 0;
+            long sumG = 0;
+            long sumB = 0;
+            long count = 0;
+
+            int step = Math.max(1, Math.min(image.getWidth(), image.getHeight()) / 64);
+            for (int y = 0; y < image.getHeight(); y += step) {
+                for (int x = 0; x < image.getWidth(); x += step) {
+                    int argb = image.getRGB(x, y);
+                    int a = (argb >>> 24) & 0xff;
+                    if (a < 20) {
+                        continue;
+                    }
+                    int r = (argb >>> 16) & 0xff;
+                    int g = (argb >>> 8) & 0xff;
+                    int b = argb & 0xff;
+                    if (r + g + b < 45) {
+                        continue;
+                    }
+                    sumR += r;
+                    sumG += g;
+                    sumB += b;
+                    count++;
+                }
+            }
+
+            if (count == 0) {
+                return new Color(52, 120, 214);
+            }
+
+            int r = (int) (sumR / count);
+            int g = (int) (sumG / count);
+            int b = (int) (sumB / count);
+
+            // Keep accent vivid enough so controls feel branded instead of gray.
+            r = Math.max(40, Math.min(215, (int) (r * 1.10)));
+            g = Math.max(60, Math.min(220, (int) (g * 1.05)));
+            b = Math.max(90, Math.min(235, (int) (b * 1.08)));
+            return new Color(r, g, b);
+        } catch (Exception ignored) {
+            return new Color(52, 120, 214);
+        }
+    }
+
+    private Color tintColor(Color color, float amountToWhite) {
+        float mix = Math.max(0.0f, Math.min(1.0f, amountToWhite));
+        int r = (int) (color.getRed() * (1.0f - mix) + 255 * mix);
+        int g = (int) (color.getGreen() * (1.0f - mix) + 255 * mix);
+        int b = (int) (color.getBlue() * (1.0f - mix) + 255 * mix);
+        return new Color(r, g, b);
+    }
+
+    private void stylePrimaryButton(JButton button) {
+        button.setBackground(brandAccent);
+        button.setForeground(new Color(247, 251, 255));
+        button.setOpaque(true);
+        button.setFocusPainted(false);
+    }
+
+    private void styleSecondaryButton(JButton button) {
+        button.setBackground(new Color(232, 237, 244));
+        button.setForeground(brandText);
+        button.setOpaque(true);
+        button.setFocusPainted(false);
     }
 
     private void refreshDesktopSelectorsAsync() {
