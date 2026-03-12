@@ -282,6 +282,13 @@ public class BotRuntime {
         musicController.removePlayerPanelFromDesktop(channel);
     }
 
+    public synchronized boolean hasPlayerPanelForGuild(long guildId) {
+        if (musicController == null) {
+            return false;
+        }
+        return musicController.hasPersistentPlayerPanel(guildId);
+    }
+
     public synchronized String playerSummary() {
         if (musicController == null) {
             return "Bot is not running.";

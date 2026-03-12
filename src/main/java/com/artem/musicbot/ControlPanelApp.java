@@ -296,6 +296,7 @@ public class ControlPanelApp {
                         startButton.setEnabled(false);
                         setDesktopControlsEnabled(true);
                         refreshCleanupScopeButtonAsync();
+                        refreshPlayerPanelToggleButtonAsync();
                     });
                     refreshDesktopSelectorsAsync();
                     refreshPlayerSummaryAsync();
@@ -314,6 +315,7 @@ public class ControlPanelApp {
                 setEarRapeEnabled(false);
                 setDesktopControlsEnabled(false);
                 setCleanupScopeButtonState(false, false);
+                setPlayerPanelToggleButtonState(false, false);
                 if (playerSummaryArea != null) {
                     playerSummaryArea.setText(ui("botNotRunning"));
                 }
@@ -339,6 +341,7 @@ public class ControlPanelApp {
         if (isDesktopOnboardingEnabled()) {
             guildCombo.addActionListener(ignored -> refreshChannelsAsync());
             guildCombo.addActionListener(ignored -> refreshPlayerSummaryAsync());
+            guildCombo.addActionListener(ignored -> refreshPlayerPanelToggleButtonAsync());
             guildCombo.addActionListener(ignored -> setEarRapeEnabled(false));
 
             addSongButton.addActionListener(ignored -> submitDesktopEnqueue(false));
@@ -446,8 +449,15 @@ public class ControlPanelApp {
                 }
 
                 try {
-                    runtime.removePlayerPanelFromDesktop(guildId, channelId);
-                    log(ui("playerPanelRemoved"));
+                    boolean panelExists = runtime.hasPlayerPanelForGuild(guildId);
+                    if (panelExists) {
+                        runtime.removePlayerPanelFromDesktop(guildId, channelId);
+                        log(ui("playerPanelRemoved"));
+                    } else {
+                        runtime.launchPlayerPanelFromDesktop(guildId, channelId);
+                        log(ui("playerPanelPosted"));
+                    }
+                    refreshPlayerPanelToggleButtonAsync();
                     refreshPlayerSummaryAsync();
                 } catch (Exception ex) {
                     SwingUtilities.invokeLater(() -> showError(ex.getMessage()));
@@ -496,9 +506,10 @@ public class ControlPanelApp {
         styleSecondaryButton(earRapeToggleButton);
         setEarRapeEnabled(false);
         refreshDesktopButton = new JButton(ui("refreshLists"));
-        launchPlayerButton = new JButton(ui("removePlayer"));
+        launchPlayerButton = new JButton();
         styleSecondaryButton(refreshDesktopButton);
         stylePrimaryButton(launchPlayerButton);
+        setPlayerPanelToggleButtonState(false, false);
         playerSummaryArea = new JTextArea(16, 58);
         playerSummaryArea.setEditable(false);
         playerSummaryArea.setBackground(new Color(20, 27, 36));
@@ -628,6 +639,14 @@ public class ControlPanelApp {
         });
     }
 
+    private void refreshPlayerPanelToggleButtonAsync() {
+        worker.submit(() -> {
+            Long guildId = selectedGuildId();
+            boolean hasPanel = guildId != null && runtime.hasPlayerPanelForGuild(guildId);
+            setPlayerPanelToggleButtonState(runtime.isRunning(), hasPanel);
+        });
+    }
+
     private void setCleanupScopeButtonState(boolean enabled, boolean botOnly) {
         SwingUtilities.invokeLater(() -> {
             if (cleanupScopeButton == null) {
@@ -635,6 +654,16 @@ public class ControlPanelApp {
             }
             cleanupScopeButton.setEnabled(enabled);
             cleanupScopeButton.setText(ui("cleanupScope") + ": " + ui(botOnly ? "cleanupScopeBotOnly" : "cleanupScopeAll"));
+        });
+    }
+
+    private void setPlayerPanelToggleButtonState(boolean enabled, boolean panelExists) {
+        SwingUtilities.invokeLater(() -> {
+            if (launchPlayerButton == null) {
+                return;
+            }
+            launchPlayerButton.setEnabled(enabled);
+            launchPlayerButton.setText(ui(panelExists ? "removePlayer" : "showPlayer"));
         });
     }
 
@@ -820,6 +849,7 @@ public class ControlPanelApp {
                 } else if (channelCombo.getItemCount() > 0) {
                     channelCombo.setSelectedIndex(0);
                 }
+                refreshPlayerPanelToggleButtonAsync();
             });
         });
     }
@@ -832,8 +862,10 @@ public class ControlPanelApp {
             Long guildId = selectedGuildId();
             String summary = guildId == null ? runtime.playerSummary() : runtime.playerSummaryForGuild(guildId);
             List<String> queue = guildId == null ? List.of() : runtime.playerQueueForGuild(guildId);
+            boolean hasPanel = guildId != null && runtime.hasPlayerPanelForGuild(guildId);
             SwingUtilities.invokeLater(() -> {
                 playerSummaryArea.setText(summary);
+                setPlayerPanelToggleButtonState(runtime.isRunning(), hasPanel);
                 if (queueListModel != null) {
                     queueListModel.clear();
                     for (int i = 0; i < queue.size(); i++) {
@@ -1128,6 +1160,7 @@ public class ControlPanelApp {
             case "skip" -> "Skip";
             case "refreshLists" -> "Refresh Lists";
             case "removePlayer" -> "Remove Player in Discord";
+            case "showPlayer" -> "Show Player in Discord";
             case "botNotRunning" -> "Bot is not running.";
             case "guild" -> "Guild";
             case "textChannel" -> "Text channel";
@@ -1160,6 +1193,7 @@ public class ControlPanelApp {
             case "desktopSearchCancelled" -> "Desktop search cancelled";
             case "desktopQueued" -> "Desktop queued";
             case "desktopQueuedNext" -> "Queued as next";
+            case "playerPanelPosted" -> "Posted player panel to Discord.";
             case "playerPanelRemoved" -> "Removed player panel from Discord.";
             case "desktopAction" -> "Desktop action";
             case "chooseTrackFor" -> "Choose a track for";
@@ -1203,6 +1237,7 @@ public class ControlPanelApp {
             case "skip" -> "Пропуск";
             case "refreshLists" -> "Обновить списки";
             case "removePlayer" -> "Убрать плеер из Discord";
+            case "showPlayer" -> "Показать плеер в Discord";
             case "clearConsole" -> "Очистить консоль";
             case "copySummary" -> "Копировать сводку";
             case "queueIndex" -> "№ в очереди";
@@ -1256,6 +1291,8 @@ public class ControlPanelApp {
             case "cleanupScopeAll" -> byLang(lang, "All", "Բոլորը", "ყველა", "Hamısı", "Барлығы", "Hammasi", "Усе", "Alle", "Todo", "Tutto", "Tudo", "全部", "すべて");
             case "cleanupScopeBotOnly" -> byLang(lang, "Bot Only", "Միայն բոտ", "მხოლოდ ბოტი", "Yalnız bot", "Тек бот", "Faqat bot", "Лише бот", "Nur Bot", "Solo bot", "Solo bot", "Apenas bot", "仅机器人", "ボットのみ");
             case "removePlayer" -> byLang(lang, "Remove Player in Discord", "Հեռացնել պլեյերը Discord-ում", "Discord-ში პლეერის წაშლა", "Discord-da pleyeri sil", "Discord-та плеерді жою", "Discord'da pleyerni olib tashlash", "Видалити плеєр у Discord", "Player in Discord entfernen", "Quitar reproductor en Discord", "Rimuovi player su Discord", "Remover player no Discord", "在 Discord 中移除播放器", "Discordでプレーヤーを削除");
+            case "showPlayer" -> byLang(lang, "Show Player in Discord", "Ցույց տալ պլեյերը Discord-ում", "Discord-ში პლეერის ჩვენება", "Discord-da pleyeri göstər", "Discord-та плеерді көрсету", "Discord'da pleyerni ko‘rsatish", "Показати плеєр у Discord", "Player in Discord anzeigen", "Mostrar reproductor en Discord", "Mostra player su Discord", "Mostrar player no Discord", "在 Discord 中显示播放器", "Discordでプレーヤーを表示");
+            case "playerPanelPosted" -> byLang(lang, "Posted player panel to Discord.", "Պլեյերի վահանակը ուղարկվեց Discord։", "პლეერის პანელი გაიგზავნა Discord-ში.", "Pleyer paneli Discord-a göndərildi.", "Плеер панелі Discord-қа жіберілді.", "Player panel Discord'ga yuborildi.", "Панель плеєра відправлено в Discord.", "Player-Panel in Discord gepostet.", "Panel del reproductor enviado a Discord.", "Pannello player inviato su Discord.", "Painel do player enviado ao Discord.", "播放器面板已发送到 Discord。", "プレーヤーパネルをDiscordに送信しました。");
             case "playerPanelRemoved" -> byLang(lang, "Removed player panel from Discord.", "Պլեյերի վահանակը հեռացվեց Discord-ից։", "პლეერის პანელი წაიშალა Discord-იდან.", "Pleyer paneli Discord-dan silindi.", "Плеер панелі Discord-тан жойылды.", "Player panel Discord'dan olib tashlandi.", "Панель плеєра видалено з Discord.", "Player-Panel aus Discord entfernt.", "Panel del reproductor eliminado de Discord.", "Pannello player rimosso da Discord.", "Painel do player removido do Discord.", "已从 Discord 移除播放器面板。", "プレーヤーパネルをDiscordから削除しました。");
             case "desktopAction" -> byLang(lang, "Desktop action", "Desktop գործողություն", "Desktop ქმედება", "Desktop əməliyyatı", "Desktop әрекеті", "Desktop amali", "Desktop дія", "Desktop-Aktion", "Acción de desktop", "Azione desktop", "Ação desktop", "桌面操作", "デスクトップ操作");
             case "chooseTrackFor" -> byLang(lang, "Choose a track for", "Ընտրեք թրեք", "აირჩიეთ ტრეკი", "Trek seçin", "Тректі таңдаңыз", "Trekni tanlang", "Оберіть трек для", "Track auswählen für", "Elegir pista para", "Scegli una traccia per", "Escolha uma faixa para", "为以下内容选择曲目", "次の曲を選択");

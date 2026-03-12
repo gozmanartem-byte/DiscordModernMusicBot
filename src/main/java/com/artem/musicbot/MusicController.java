@@ -352,6 +352,10 @@ public class MusicController {
         clearPersistentPlayerPanel(guild);
     }
 
+    public boolean hasPersistentPlayerPanel(long guildId) {
+        return playerPanelMessageIds.containsKey(guildId) && playerPanelChannelIds.containsKey(guildId);
+    }
+
     public SearchSelectionOutcome chooseSearchResult(TextChannel channel, Member member, String selectionId, int index) {
         PendingSearch pendingSearch = pendingSearches.get(selectionId);
         if (pendingSearch == null) {
