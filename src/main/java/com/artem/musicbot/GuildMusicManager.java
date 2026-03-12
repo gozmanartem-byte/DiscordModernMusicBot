@@ -11,6 +11,10 @@ public class GuildMusicManager {
     public final TrackScheduler scheduler;
     public final AudioPlayerSendHandler sendHandler;
     private int bassLevel;
+    private String timingTrackId;
+    private long timingAnchorTrackPosMs;
+    private long timingAnchorWallMs;
+    private boolean timingPaused;
 
     public GuildMusicManager(AudioPlayerManager playerManager, Consumer<AudioTrack> onTrackStart, Runnable onQueueEmpty) {
         this.player = playerManager.createPlayer();
@@ -29,22 +33,92 @@ public class GuildMusicManager {
     }
 
     public void markTrackStarted() {
-        // Kept for compatibility with existing call sites.
+        synchronized (this) {
+            AudioTrack current = player.getPlayingTrack();
+            if (current == null) {
+                timingTrackId = null;
+                timingAnchorTrackPosMs = 0L;
+                timingAnchorWallMs = System.currentTimeMillis();
+                timingPaused = false;
+                return;
+            }
+
+            timingTrackId = current.getIdentifier();
+            timingAnchorTrackPosMs = current.getPosition();
+            timingAnchorWallMs = System.currentTimeMillis();
+            timingPaused = false;
+        }
     }
 
     public void markTrackPaused() {
-        // Kept for compatibility with existing call sites.
+        synchronized (this) {
+            AudioTrack current = player.getPlayingTrack();
+            if (current == null) {
+                timingPaused = true;
+                return;
+            }
+
+            timingTrackId = current.getIdentifier();
+            timingAnchorTrackPosMs = Math.max(timingAnchorTrackPosMs, current.getPosition());
+            timingAnchorWallMs = System.currentTimeMillis();
+            timingPaused = true;
+        }
     }
 
     public void markTrackResumed() {
-        // Kept for compatibility with existing call sites.
+        synchronized (this) {
+            AudioTrack current = player.getPlayingTrack();
+            if (current == null) {
+                timingPaused = false;
+                timingAnchorWallMs = System.currentTimeMillis();
+                return;
+            }
+
+            timingTrackId = current.getIdentifier();
+            timingAnchorTrackPosMs = Math.max(timingAnchorTrackPosMs, current.getPosition());
+            timingAnchorWallMs = System.currentTimeMillis();
+            timingPaused = false;
+        }
     }
 
     public long getCalculatedPositionMs() {
-        AudioTrack current = player.getPlayingTrack();
-        if (current == null) {
-            return 0L;
+        synchronized (this) {
+            AudioTrack current = player.getPlayingTrack();
+            if (current == null) {
+                timingTrackId = null;
+                timingAnchorTrackPosMs = 0L;
+                timingAnchorWallMs = System.currentTimeMillis();
+                timingPaused = false;
+                return 0L;
+            }
+
+            String currentTrackId = current.getIdentifier();
+            long observedPosition = current.getPosition();
+            long now = System.currentTimeMillis();
+
+            if (timingTrackId == null || !timingTrackId.equals(currentTrackId)) {
+                timingTrackId = currentTrackId;
+                timingAnchorTrackPosMs = observedPosition;
+                timingAnchorWallMs = now;
+                timingPaused = player.isPaused();
+            }
+
+            long predictedPosition = timingAnchorTrackPosMs;
+            if (!player.isPaused() && !timingPaused) {
+                long elapsed = Math.max(0L, now - timingAnchorWallMs);
+                predictedPosition += elapsed;
+            }
+
+            long calculated = Math.max(observedPosition, predictedPosition);
+            long duration = current.getDuration();
+            if (duration >= 0) {
+                calculated = Math.min(calculated, duration);
+            }
+
+            timingAnchorTrackPosMs = calculated;
+            timingAnchorWallMs = now;
+            timingPaused = player.isPaused();
+            return calculated;
         }
-        return current.getPosition();
     }
 }

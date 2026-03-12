@@ -108,6 +108,7 @@ public class MusicController {
         I18n localI18n = guildI18n(channel.getGuild());
         stopCleanupUntilMillis.remove(channel.getGuild().getIdLong());
         String resolvedIdentifier = normalizeIdentifier(identifier);
+        String displayIdentifier = displayIdentifier(identifier, localI18n);
         lastTextChannels.put(channel.getGuild().getIdLong(), channel);
         VoiceChannel voiceChannel = getUserVoiceChannel(member);
         if (voiceChannel == null) {
@@ -123,7 +124,7 @@ public class MusicController {
             channel.sendMessage(localI18n.t("join.serverMuted")).queue();
         }
 
-        channel.sendMessage(localI18n.t("loading", identifier)).queue();
+        channel.sendMessage(localI18n.t("loading", displayIdentifier)).queue();
         playerManager.loadItemOrdered(musicManager, resolvedIdentifier, new AudioLoadResultHandler() {
             @Override
             public void trackLoaded(AudioTrack track) {
@@ -168,14 +169,14 @@ public class MusicController {
             @Override
             public void noMatches() {
                 noMatchesCount.incrementAndGet();
-                channel.sendMessage(localI18n.t("nothing.found", identifier)).queue();
+                channel.sendMessage(localI18n.t("nothing.found", displayIdentifier)).queue();
                 disconnectIfIdle(channel, musicManager);
             }
 
             @Override
             public void loadFailed(FriendlyException exception) {
                 loadFailureCount.incrementAndGet();
-                channel.sendMessage(buildLoadFailureMessage(identifier, exception)).queue();
+                channel.sendMessage(buildLoadFailureMessage(displayIdentifier, exception)).queue();
                 disconnectIfIdle(channel, musicManager);
             }
         });
@@ -185,6 +186,7 @@ public class MusicController {
         I18n localI18n = guildI18n(channel.getGuild());
         stopCleanupUntilMillis.remove(channel.getGuild().getIdLong());
         String resolvedIdentifier = normalizeIdentifier(identifier);
+        String displayIdentifier = displayIdentifier(identifier, localI18n);
         lastTextChannels.put(channel.getGuild().getIdLong(), channel);
 
         GuildMusicManager musicManager = getGuildMusicManager(channel.getGuild());
@@ -203,7 +205,7 @@ public class MusicController {
 
         connect(channel.getGuild(), voiceChannel, musicManager);
 
-        channel.sendMessage(localI18n.t("loading", identifier)).queue();
+        channel.sendMessage(localI18n.t("loading", displayIdentifier)).queue();
         playerManager.loadItemOrdered(musicManager, resolvedIdentifier, new AudioLoadResultHandler() {
             @Override
             public void trackLoaded(AudioTrack track) {
@@ -243,14 +245,14 @@ public class MusicController {
             @Override
             public void noMatches() {
                 noMatchesCount.incrementAndGet();
-                channel.sendMessage(localI18n.t("nothing.found", identifier)).queue();
+                channel.sendMessage(localI18n.t("nothing.found", displayIdentifier)).queue();
                 disconnectIfIdle(channel, musicManager);
             }
 
             @Override
             public void loadFailed(FriendlyException exception) {
                 loadFailureCount.incrementAndGet();
-                channel.sendMessage(buildLoadFailureMessage(identifier, exception)).queue();
+                channel.sendMessage(buildLoadFailureMessage(displayIdentifier, exception)).queue();
                 disconnectIfIdle(channel, musicManager);
             }
         });
@@ -1476,6 +1478,20 @@ public class MusicController {
         }
 
         return "ytsearch:" + trimmed;
+    }
+
+    private String displayIdentifier(String identifier, I18n localI18n) {
+        String trimmed = identifier == null ? "" : identifier.trim();
+        if (trimmed.isBlank()) {
+            return localI18n.t("player.track");
+        }
+
+        String lower = trimmed.toLowerCase();
+        if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("www.")) {
+            return localI18n.t("player.track");
+        }
+
+        return trimmed;
     }
 
     private boolean isSearchIdentifier(String identifier) {
