@@ -315,6 +315,20 @@ public class BotRuntime {
         return musicController.desktopQueueEntries(guildId);
     }
 
+    public synchronized void setStopCleanupBotOnly(boolean enabled) {
+        if (musicController == null) {
+            throw new IllegalStateException("Bot is not running.");
+        }
+        musicController.setStopCleanupBotOnly(enabled);
+    }
+
+    public synchronized boolean isStopCleanupBotOnly() {
+        if (musicController == null) {
+            return false;
+        }
+        return musicController.isStopCleanupBotOnly();
+    }
+
     private TextChannel requireTextChannel(long guildId, long channelId) {
         if (musicController == null) {
             throw new IllegalStateException("Bot is not running.");

@@ -100,6 +100,7 @@ public class ControlPanelApp {
     private JButton removeQueueButton;
     private JButton shuffleQueueButton;
     private JButton clearQueueButton;
+    private JButton cleanupScopeButton;
     private JButton earRapeToggleButton;
     private boolean earRapeEnabled;
     private JButton refreshDesktopButton;
@@ -294,6 +295,7 @@ public class ControlPanelApp {
                         stopButton.setEnabled(true);
                         startButton.setEnabled(false);
                         setDesktopControlsEnabled(true);
+                        refreshCleanupScopeButtonAsync();
                     });
                     refreshDesktopSelectorsAsync();
                     refreshPlayerSummaryAsync();
@@ -311,6 +313,7 @@ public class ControlPanelApp {
                 startButton.setEnabled(true);
                 setEarRapeEnabled(false);
                 setDesktopControlsEnabled(false);
+                setCleanupScopeButtonState(false, false);
                 if (playerSummaryArea != null) {
                     playerSummaryArea.setText(ui("botNotRunning"));
                 }
@@ -386,6 +389,21 @@ public class ControlPanelApp {
             }));
             shuffleQueueButton.addActionListener(ignored -> desktopControlAsync("shuffle", BotRuntime::shuffleQueueFromDesktop));
             clearQueueButton.addActionListener(ignored -> desktopControlAsync("clear", BotRuntime::clearQueueFromDesktop));
+            cleanupScopeButton.addActionListener(ignored -> worker.submit(() -> {
+                if (!runtime.isRunning()) {
+                    SwingUtilities.invokeLater(() -> showError(ui("botNotRunning")));
+                    return;
+                }
+
+                try {
+                    boolean nextBotOnly = !runtime.isStopCleanupBotOnly();
+                    runtime.setStopCleanupBotOnly(nextBotOnly);
+                    log(ui("desktopAction") + ": " + (nextBotOnly ? ui("cleanupScopeBotOnly") : ui("cleanupScopeAll")));
+                    setCleanupScopeButtonState(true, nextBotOnly);
+                } catch (Exception ex) {
+                    SwingUtilities.invokeLater(() -> showError(ex.getMessage()));
+                }
+            }));
             earRapeToggleButton.addActionListener(ignored -> {
                 final boolean targetState = !earRapeEnabled;
                 Long guildId = selectedGuildId();
@@ -471,6 +489,9 @@ public class ControlPanelApp {
         styleSecondaryButton(removeQueueButton);
         styleSecondaryButton(shuffleQueueButton);
         styleSecondaryButton(clearQueueButton);
+        cleanupScopeButton = new JButton();
+        styleSecondaryButton(cleanupScopeButton);
+        setCleanupScopeButtonState(false, false);
         earRapeToggleButton = new JButton();
         styleSecondaryButton(earRapeToggleButton);
         setEarRapeEnabled(false);
@@ -544,6 +565,7 @@ public class ControlPanelApp {
         controls.add(resumeButton);
         controls.add(skipButton);
         controls.add(stopPlaybackButton);
+        controls.add(cleanupScopeButton);
         controls.add(earRapeToggleButton);
 
         controls.add(new JLabel(ui("queueIndex")));
@@ -593,9 +615,27 @@ public class ControlPanelApp {
         removeQueueButton.setEnabled(enabled);
         shuffleQueueButton.setEnabled(enabled);
         clearQueueButton.setEnabled(enabled);
+        cleanupScopeButton.setEnabled(enabled);
         earRapeToggleButton.setEnabled(enabled);
         refreshDesktopButton.setEnabled(enabled);
         launchPlayerButton.setEnabled(enabled);
+    }
+
+    private void refreshCleanupScopeButtonAsync() {
+        worker.submit(() -> {
+            boolean botOnly = runtime.isStopCleanupBotOnly();
+            setCleanupScopeButtonState(runtime.isRunning(), botOnly);
+        });
+    }
+
+    private void setCleanupScopeButtonState(boolean enabled, boolean botOnly) {
+        SwingUtilities.invokeLater(() -> {
+            if (cleanupScopeButton == null) {
+                return;
+            }
+            cleanupScopeButton.setEnabled(enabled);
+            cleanupScopeButton.setText(ui("cleanupScope") + ": " + ui(botOnly ? "cleanupScopeBotOnly" : "cleanupScopeAll"));
+        });
     }
 
     private void setEarRapeEnabled(boolean enabled) {
@@ -1134,6 +1174,9 @@ public class ControlPanelApp {
             case "queueShuffle" -> "Shuffle";
             case "queueClear" -> "Clear Queue";
             case "queueIndexRequired" -> "Enter a valid queue index (1..n).";
+            case "cleanupScope" -> "Cleanup";
+            case "cleanupScopeAll" -> "All";
+            case "cleanupScopeBotOnly" -> "Bot Only";
             case "toggleOn" -> "On";
             case "toggleOff" -> "Off";
             default -> key;
@@ -1169,6 +1212,9 @@ public class ControlPanelApp {
             case "queueShuffle" -> "Перемешать";
             case "queueClear" -> "Очистить очередь";
             case "queueIndexRequired" -> "Введите корректный номер в очереди (1..n).";
+            case "cleanupScope" -> "Очистка";
+            case "cleanupScopeAll" -> "Все";
+            case "cleanupScopeBotOnly" -> "Только бот";
             case "desktopQueuedNext" -> "Добавлено следующей";
             case "botNotRunning" -> "Бот не запущен.";
             case "guild" -> "Сервер";
@@ -1206,6 +1252,9 @@ public class ControlPanelApp {
             case "desktopSearchCancelled" -> byLang(lang, "Desktop search cancelled", "Desktop որոնումը չեղարկվեց", "Desktop ძიება გაუქმდა", "Desktop axtarışı ləğv edildi", "Desktop іздеу тоқтатылды", "Desktop qidiruvi bekor qilindi", "Desktop пошук скасовано", "Desktop-Suche abgebrochen", "Búsqueda desktop cancelada", "Ricerca desktop annullata", "Pesquisa desktop cancelada", "桌面搜索已取消", "デスクトップ検索をキャンセルしました");
             case "desktopQueued" -> byLang(lang, "Desktop queued", "Desktop-ից հերթագրվեց", "Desktop-დან დაემატა რიგში", "Desktop-dan növbəyə əlavə edildi", "Desktop-тен кезекке қосылды", "Desktop'dan navbatga qo‘shildi", "Додано в чергу з Desktop", "Von Desktop in Warteschlange", "Agregado a cola desde desktop", "Aggiunto in coda da desktop", "Adicionado à fila pelo desktop", "已从桌面加入队列", "デスクトップからキューに追加");
             case "queueList" -> byLang(lang, "Queue (select item to remove)", "Հերթ (ընտրեք հեռացնելու համար)", "რიგი (ასარჩევად წასაშლელად)", "Növbə (silmək üçün seçin)", "Кезек (өшіру үшін таңдаңыз)", "Navbat (o‘chirish uchun tanlang)", "Черга (виберіть елемент для видалення)", "Warteschlange (Element zum Entfernen wählen)", "Cola (selecciona elemento para eliminar)", "Coda (seleziona elemento da rimuovere)", "Fila (selecione item para remover)", "队列（选择要移除的项目）", "キュー（削除する項目を選択）");
+            case "cleanupScope" -> byLang(lang, "Cleanup", "Մաքրում", "გასუფთავება", "Təmizləmə", "Тазалау", "Tozalash", "Очищення", "Bereinigung", "Limpieza", "Pulizia", "Limpeza", "清理", "クリーンアップ");
+            case "cleanupScopeAll" -> byLang(lang, "All", "Բոլորը", "ყველა", "Hamısı", "Барлығы", "Hammasi", "Усе", "Alle", "Todo", "Tutto", "Tudo", "全部", "すべて");
+            case "cleanupScopeBotOnly" -> byLang(lang, "Bot Only", "Միայն բոտ", "მხოლოდ ბოტი", "Yalnız bot", "Тек бот", "Faqat bot", "Лише бот", "Nur Bot", "Solo bot", "Solo bot", "Apenas bot", "仅机器人", "ボットのみ");
             case "removePlayer" -> byLang(lang, "Remove Player in Discord", "Հեռացնել պլեյերը Discord-ում", "Discord-ში პლეერის წაშლა", "Discord-da pleyeri sil", "Discord-та плеерді жою", "Discord'da pleyerni olib tashlash", "Видалити плеєр у Discord", "Player in Discord entfernen", "Quitar reproductor en Discord", "Rimuovi player su Discord", "Remover player no Discord", "在 Discord 中移除播放器", "Discordでプレーヤーを削除");
             case "playerPanelRemoved" -> byLang(lang, "Removed player panel from Discord.", "Պլեյերի վահանակը հեռացվեց Discord-ից։", "პლეერის პანელი წაიშალა Discord-იდან.", "Pleyer paneli Discord-dan silindi.", "Плеер панелі Discord-тан жойылды.", "Player panel Discord'dan olib tashlandi.", "Панель плеєра видалено з Discord.", "Player-Panel aus Discord entfernt.", "Panel del reproductor eliminado de Discord.", "Pannello player rimosso da Discord.", "Painel do player removido do Discord.", "已从 Discord 移除播放器面板。", "プレーヤーパネルをDiscordから削除しました。");
             case "desktopAction" -> byLang(lang, "Desktop action", "Desktop գործողություն", "Desktop ქმედება", "Desktop əməliyyatı", "Desktop әрекеті", "Desktop amali", "Desktop дія", "Desktop-Aktion", "Acción de desktop", "Azione desktop", "Ação desktop", "桌面操作", "デスクトップ操作");

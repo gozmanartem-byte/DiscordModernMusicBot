@@ -82,6 +82,7 @@ public class MusicController {
         return thread;
     });
     private final Map<Long, Long> stopCleanupUntilMillis = new ConcurrentHashMap<>();
+    private volatile boolean stopCleanupBotOnly;
 
     public MusicController(BotConfig config, I18n i18n, GuildSettingsStore settingsStore) {
         this.i18n = i18n;
@@ -548,6 +549,7 @@ public class MusicController {
     }
 
     public void stop(TextChannel channel) {
+        boolean botOnlyCleanup = stopCleanupBotOnly;
         long guildId = channel.getGuild().getIdLong();
         stopCleanupUntilMillis.put(guildId, System.currentTimeMillis() + 10_000L);
         clearPersistentPlayerPanel(channel.getGuild());
@@ -555,13 +557,14 @@ public class MusicController {
         musicManager.scheduler.stop();
         channel.getGuild().getAudioManager().closeAudioConnection();
         updatePresence(channel.getGuild());
-        cleanupRecentChat(channel);
+        cleanupRecentChat(channel, botOnlyCleanup);
         // Run a second pass shortly after stop to catch straggler messages posted asynchronously.
-        CompletableFuture.delayedExecutor(1, TimeUnit.SECONDS).execute(() -> cleanupRecentChat(channel));
-        CompletableFuture.delayedExecutor(3, TimeUnit.SECONDS).execute(() -> cleanupRecentChat(channel));
+        CompletableFuture.delayedExecutor(1, TimeUnit.SECONDS).execute(() -> cleanupRecentChat(channel, botOnlyCleanup));
+        CompletableFuture.delayedExecutor(3, TimeUnit.SECONDS).execute(() -> cleanupRecentChat(channel, botOnlyCleanup));
     }
 
     public void stopFromRuntime(TextChannel channel) {
+        boolean botOnlyCleanup = stopCleanupBotOnly;
         long guildId = channel.getGuild().getIdLong();
         stopCleanupUntilMillis.put(guildId, System.currentTimeMillis() + 10_000L);
         clearPersistentPlayerPanel(channel.getGuild());
@@ -569,7 +572,15 @@ public class MusicController {
         musicManager.scheduler.stop();
         channel.getGuild().getAudioManager().closeAudioConnection();
         updatePresence(channel.getGuild());
-        cleanupRecentChatBlocking(channel);
+        cleanupRecentChatBlocking(channel, botOnlyCleanup);
+    }
+
+    public void setStopCleanupBotOnly(boolean enabled) {
+        this.stopCleanupBotOnly = enabled;
+    }
+
+    public boolean isStopCleanupBotOnly() {
+        return stopCleanupBotOnly;
     }
 
     public void setVolume(TextChannel channel, int volume) {
@@ -1204,17 +1215,17 @@ public class MusicController {
         playerPanelLastAutoRefreshSecond.remove(guildId);
     }
 
-    private void cleanupRecentChat(TextChannel channel) {
+    private void cleanupRecentChat(TextChannel channel, boolean botOnly) {
         channel.getHistory().retrievePast(BULK_DELETE_LIMIT).queue(messages -> {
                     if (messages.isEmpty()) {
                         return;
                     }
 
-                    fastDeleteBatch(channel, messages);
+                    fastDeleteBatch(channel, messages, botOnly);
 
                     if (messages.size() == BULK_DELETE_LIMIT) {
                         String beforeId = messages.get(messages.size() - 1).getId();
-                        cleanupRecentChatBefore(channel, beforeId);
+                        cleanupRecentChatBefore(channel, beforeId, botOnly);
                     }
                 },
                 ignored -> {
@@ -1222,18 +1233,18 @@ public class MusicController {
         );
     }
 
-    private void cleanupRecentChatBefore(TextChannel channel, String beforeId) {
+    private void cleanupRecentChatBefore(TextChannel channel, String beforeId, boolean botOnly) {
         channel.getHistoryBefore(beforeId, BULK_DELETE_LIMIT).queue(history -> {
                     List<Message> messages = history.getRetrievedHistory();
                     if (messages.isEmpty()) {
                         return;
                     }
 
-                    fastDeleteBatch(channel, messages);
+                    fastDeleteBatch(channel, messages, botOnly);
 
                     if (messages.size() == BULK_DELETE_LIMIT) {
                         String nextBeforeId = messages.get(messages.size() - 1).getId();
-                        cleanupRecentChatBefore(channel, nextBeforeId);
+                        cleanupRecentChatBefore(channel, nextBeforeId, botOnly);
                     }
                 },
                 ignored -> {
@@ -1241,12 +1252,16 @@ public class MusicController {
         );
     }
 
-    private void fastDeleteBatch(TextChannel channel, List<Message> messages) {
+    private void fastDeleteBatch(TextChannel channel, List<Message> messages, boolean botOnly) {
         OffsetDateTime bulkCutoff = OffsetDateTime.now(ZoneOffset.UTC).minusDays(14);
         List<Message> bulkEligible = new ArrayList<>();
         List<Message> fallback = new ArrayList<>();
 
+        long botUserId = channel.getGuild().getSelfMember().getIdLong();
         for (Message message : messages) {
+            if (botOnly && message.getAuthor().getIdLong() != botUserId) {
+                continue;
+            }
             if (message.getTimeCreated().isAfter(bulkCutoff)) {
                 bulkEligible.add(message);
             } else {
@@ -1284,7 +1299,7 @@ public class MusicController {
         ));
     }
 
-    private void cleanupRecentChatBlocking(TextChannel channel) {
+    private void cleanupRecentChatBlocking(TextChannel channel, boolean botOnly) {
         String beforeId = null;
 
         while (true) {
@@ -1303,7 +1318,7 @@ public class MusicController {
                 return;
             }
 
-            fastDeleteBatchBlocking(channel, messages);
+            fastDeleteBatchBlocking(channel, messages, botOnly);
 
             if (messages.size() < BULK_DELETE_LIMIT) {
                 return;
@@ -1313,12 +1328,16 @@ public class MusicController {
         }
     }
 
-    private void fastDeleteBatchBlocking(TextChannel channel, List<Message> messages) {
+    private void fastDeleteBatchBlocking(TextChannel channel, List<Message> messages, boolean botOnly) {
         OffsetDateTime bulkCutoff = OffsetDateTime.now(ZoneOffset.UTC).minusDays(14);
         List<Message> bulkEligible = new ArrayList<>();
         List<Message> fallback = new ArrayList<>();
 
+        long botUserId = channel.getGuild().getSelfMember().getIdLong();
         for (Message message : messages) {
+            if (botOnly && message.getAuthor().getIdLong() != botUserId) {
+                continue;
+            }
             if (message.getTimeCreated().isAfter(bulkCutoff)) {
                 bulkEligible.add(message);
             } else {
