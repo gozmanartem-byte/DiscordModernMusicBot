@@ -5,7 +5,9 @@
 !define APP_NAME "ModernMusicBot"
 !define APP_PUBLISHER "DiscordModernMusicBot"
 !define APP_ID "{4f8d1f3b-9f6b-4d28-9c58-5e55b7c4d7a1}"
+!ifndef APP_VERSION
 !define APP_VERSION "0.0.0"
+!endif
 
 Name "${APP_NAME}"
 OutFile "dist\\releases\\DiscordModernMusicBot-v${APP_VERSION}-windows-installer.exe"
