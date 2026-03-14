@@ -2,6 +2,8 @@
 !include "LogicLib.nsh"
 !include "WinMessages.nsh"
 
+!cd "${__FILEDIR__}\\.."
+
 !define APP_NAME "ModernMusicBot"
 !define APP_PUBLISHER "DiscordModernMusicBot"
 !define APP_ID "{4f8d1f3b-9f6b-4d28-9c58-5e55b7c4d7a1}"
