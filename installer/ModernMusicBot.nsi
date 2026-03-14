@@ -113,11 +113,7 @@ Function CreateBg
 FunctionEnd
 
 Function GetClientSize
-  System::Alloc 16
-  Pop $2
-  System::Call 'user32::GetClientRect(i $HWNDPARENT, i $2)'
-  System::Call '*$2(i .r1, i .r2, i .r3, i .r4)'
-  System::Free $2
+  System::Call 'user32::GetClientRect(i $HWNDPARENT, *i .r1, *i .r2, *i .r3, *i .r4)'
   IntOp $0 $3 - $1
   IntOp $1 $4 - $2
   Push $0
