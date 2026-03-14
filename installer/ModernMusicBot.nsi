@@ -2,7 +2,7 @@
 !include "LogicLib.nsh"
 !include "WinMessages.nsh"
 
-!cd "${__FILEDIR__}\\.."
+!define ROOT_DIR "${__FILEDIR__}\\.."
 
 !define APP_NAME "ModernMusicBot"
 !define APP_PUBLISHER "DiscordModernMusicBot"
@@ -81,13 +81,13 @@ Var ProgressFrame
 
 Function .onInit
   InitPluginsDir
-  File /oname=$PLUGINSDIR\\bg.bmp "release-assets\\windows\\installer\\nsis\\bg.bmp"
-  File /oname=$PLUGINSDIR\\btn_next.bmp "release-assets\\windows\\installer\\nsis\\btn_next.bmp"
-  File /oname=$PLUGINSDIR\\btn_back.bmp "release-assets\\windows\\installer\\nsis\\btn_back.bmp"
-  File /oname=$PLUGINSDIR\\btn_cancel.bmp "release-assets\\windows\\installer\\nsis\\btn_cancel.bmp"
-  File /oname=$PLUGINSDIR\\btn_install.bmp "release-assets\\windows\\installer\\nsis\\btn_install.bmp"
-  File /oname=$PLUGINSDIR\\btn_finish.bmp "release-assets\\windows\\installer\\nsis\\btn_finish.bmp"
-  File /oname=$PLUGINSDIR\\bar_frame.bmp "release-assets\\windows\\installer\\nsis\\bar_frame.bmp"
+  File /oname=$PLUGINSDIR\\bg.bmp "${ROOT_DIR}\\release-assets\\windows\\installer\\nsis\\bg.bmp"
+  File /oname=$PLUGINSDIR\\btn_next.bmp "${ROOT_DIR}\\release-assets\\windows\\installer\\nsis\\btn_next.bmp"
+  File /oname=$PLUGINSDIR\\btn_back.bmp "${ROOT_DIR}\\release-assets\\windows\\installer\\nsis\\btn_back.bmp"
+  File /oname=$PLUGINSDIR\\btn_cancel.bmp "${ROOT_DIR}\\release-assets\\windows\\installer\\nsis\\btn_cancel.bmp"
+  File /oname=$PLUGINSDIR\\btn_install.bmp "${ROOT_DIR}\\release-assets\\windows\\installer\\nsis\\btn_install.bmp"
+  File /oname=$PLUGINSDIR\\btn_finish.bmp "${ROOT_DIR}\\release-assets\\windows\\installer\\nsis\\btn_finish.bmp"
+  File /oname=$PLUGINSDIR\\bar_frame.bmp "${ROOT_DIR}\\release-assets\\windows\\installer\\nsis\\bar_frame.bmp"
 FunctionEnd
 
 Function HideDefaultButtons
@@ -295,9 +295,9 @@ Page custom FinishCreate
 Section "Install"
   SetOutPath "$INSTDIR"
   WriteRegStr HKCU "Software\\${APP_NAME}" "InstallDir" "$INSTDIR"
-  File /r "dist\\jpackage\\ModernMusicBot\\*"
-  File "ModernMusicBot.properties.example"
-  File "README.md"
-  File "README_INSTALLATION.md"
-  File "LICENSE"
+  File /r "${ROOT_DIR}\\dist\\jpackage\\ModernMusicBot\\*"
+  File "${ROOT_DIR}\\ModernMusicBot.properties.example"
+  File "${ROOT_DIR}\\README.md"
+  File "${ROOT_DIR}\\README_INSTALLATION.md"
+  File "${ROOT_DIR}\\LICENSE"
 SectionEnd
