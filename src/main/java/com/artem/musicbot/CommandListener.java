@@ -2,6 +2,12 @@ package com.artem.musicbot;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -11,10 +17,12 @@ import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.Role;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
+import net.dv8tion.jda.api.entities.channel.concrete.VoiceChannel;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.events.session.ReadyEvent;
+import net.dv8tion.jda.api.events.guild.voice.GuildVoiceUpdateEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.interactions.commands.OptionMapping;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
@@ -24,12 +32,19 @@ public class CommandListener extends ListenerAdapter {
     private static final Pattern CHANNEL_MENTION_PATTERN = Pattern.compile("^<#(\\d+)>$");
     private static final Pattern ROLE_MENTION_PATTERN = Pattern.compile("^<@&(\\d+)>$");
     private static final int QUEUE_PAGE_SIZE = 10;
+    private static final long EMPTY_VOICE_DISCONNECT_DELAY_MINUTES = 5L;
 
     private final String defaultPrefix;
     private final MusicController musicController;
     private final GuildSettingsStore settingsStore;
     private final boolean dashboardEnabled;
     private final int dashboardPort;
+    private final ScheduledExecutorService disconnectScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread thread = new Thread(r, "auto-disconnect");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private final Map<Long, ScheduledFuture<?>> pendingDisconnects = new ConcurrentHashMap<>();
 
     public CommandListener(String defaultPrefix, MusicController musicController, I18n i18n, GuildSettingsStore settingsStore, boolean dashboardEnabled, int dashboardPort) {
         this.defaultPrefix = defaultPrefix;
@@ -412,6 +427,83 @@ public class CommandListener extends ListenerAdapter {
         } else {
             event.deferEdit().queue();
         }
+    }
+
+    @Override
+    public void onGuildVoiceUpdate(GuildVoiceUpdateEvent event) {
+        Guild guild = event.getGuild();
+        var selfState = guild.getSelfMember().getVoiceState();
+        if (selfState == null || selfState.getChannel() == null) {
+            cancelPendingDisconnect(guild.getIdLong());
+            return;
+        }
+
+        if (!(selfState.getChannel() instanceof VoiceChannel voiceChannel)) {
+            cancelPendingDisconnect(guild.getIdLong());
+            return;
+        }
+
+        long humanCount = voiceChannel.getMembers().stream()
+                .filter(member -> !member.getUser().isBot())
+                .count();
+
+        if (humanCount == 0) {
+            scheduleDisconnectIfNeeded(guild, voiceChannel);
+        } else {
+            cancelPendingDisconnect(guild.getIdLong());
+        }
+    }
+
+    private void scheduleDisconnectIfNeeded(Guild guild, VoiceChannel voiceChannel) {
+        long guildId = guild.getIdLong();
+        pendingDisconnects.compute(guildId, (ignored, existing) -> {
+            if (existing != null && !existing.isDone() && !existing.isCancelled()) {
+                return existing;
+            }
+            return disconnectScheduler.schedule(() -> performAutoDisconnect(guild, voiceChannel.getIdLong()),
+                    EMPTY_VOICE_DISCONNECT_DELAY_MINUTES, TimeUnit.MINUTES);
+        });
+    }
+
+    private void cancelPendingDisconnect(long guildId) {
+        ScheduledFuture<?> future = pendingDisconnects.remove(guildId);
+        if (future != null) {
+            future.cancel(false);
+        }
+    }
+
+    private void performAutoDisconnect(Guild guild, long voiceChannelId) {
+        long guildId = guild.getIdLong();
+        var selfState = guild.getSelfMember().getVoiceState();
+        if (selfState == null || selfState.getChannel() == null || selfState.getChannel().getIdLong() != voiceChannelId) {
+            cancelPendingDisconnect(guildId);
+            return;
+        }
+
+        if (selfState.getChannel() instanceof VoiceChannel voiceChannel) {
+            long humanCount = voiceChannel.getMembers().stream()
+                    .filter(member -> !member.getUser().isBot())
+                    .count();
+            if (humanCount > 0) {
+                cancelPendingDisconnect(guildId);
+                return;
+            }
+        }
+
+        TextChannel channel = resolvePreferredTextChannel(guild);
+        musicController.stopFromAutoDisconnect(guild, channel);
+        cancelPendingDisconnect(guildId);
+    }
+
+    private TextChannel resolvePreferredTextChannel(Guild guild) {
+        long preferredId = musicController.preferredTextChannelId(guild.getIdLong());
+        if (preferredId != 0L) {
+            TextChannel preferred = guild.getTextChannelById(preferredId);
+            if (preferred != null) {
+                return preferred;
+            }
+        }
+        return guild.getTextChannels().isEmpty() ? null : guild.getTextChannels().get(0);
     }
 
     private void setPrefix(TextChannel channel, String newPrefix, GuildSettings current) {

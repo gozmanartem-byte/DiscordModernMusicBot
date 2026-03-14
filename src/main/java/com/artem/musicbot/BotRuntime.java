@@ -283,6 +283,56 @@ public class BotRuntime {
         musicController.removePlayerPanelFromDesktop(channel);
     }
 
+    public synchronized void setVolumeFromDesktop(long guildId, int volume) {
+        if (musicController == null || jda == null) {
+            throw new IllegalStateException("Bot is not running.");
+        }
+        Guild guild = jda.getGuildById(guildId);
+        if (guild == null) {
+            throw new IllegalStateException("Selected guild is unavailable.");
+        }
+        musicController.setVolumeFromDesktop(guild, volume);
+    }
+
+    public synchronized void setBassFromDesktop(long guildId, int level) {
+        if (musicController == null || jda == null) {
+            throw new IllegalStateException("Bot is not running.");
+        }
+        Guild guild = jda.getGuildById(guildId);
+        if (guild == null) {
+            throw new IllegalStateException("Selected guild is unavailable.");
+        }
+        musicController.setBassFromDesktop(guild, level);
+    }
+
+    public synchronized int currentVolumeForGuild(long guildId) {
+        if (musicController == null) {
+            return 100;
+        }
+        return musicController.currentVolumeForGuild(guildId);
+    }
+
+    public synchronized int currentBassForGuild(long guildId) {
+        if (musicController == null) {
+            return 0;
+        }
+        return musicController.currentBassForGuild(guildId);
+    }
+
+    public synchronized float[] visualizerLevelsForGuild(long guildId) {
+        if (musicController == null) {
+            return new float[AudioVisualizer.BANDS];
+        }
+        return musicController.visualizerLevelsForGuild(guildId);
+    }
+
+    public synchronized MusicController.NowPlayingSnapshot nowPlayingSnapshotForGuild(long guildId) {
+        if (musicController == null) {
+            return new MusicController.NowPlayingSnapshot("none", "idle", 0L, 0L);
+        }
+        return musicController.nowPlayingSnapshot(guildId);
+    }
+
     public synchronized boolean hasPlayerPanelForGuild(long guildId) {
         if (musicController == null) {
             return false;

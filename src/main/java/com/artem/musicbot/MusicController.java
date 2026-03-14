@@ -1,9 +1,23 @@
 package com.artem.musicbot;
 
+import java.awt.AlphaComposite;
+import java.awt.BasicStroke;
 import java.awt.Color;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.GradientPaint;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.Shape;
+import java.awt.font.TextLayout;
+import java.awt.geom.AffineTransform;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -43,6 +57,7 @@ import net.dv8tion.jda.api.entities.MessageEmbed;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
 import net.dv8tion.jda.api.entities.channel.concrete.VoiceChannel;
 import net.dv8tion.jda.api.managers.AudioManager;
+import net.dv8tion.jda.api.utils.FileUpload;
 
 public class MusicController {
     private static final int DEFAULT_VOLUME = 100;
@@ -52,7 +67,12 @@ public class MusicController {
     private static final long PLAYER_PANEL_REFRESH_TICK_SECONDS = 1L;
     private static final long PLAYER_PANEL_PLAYING_REFRESH_MS = 1000L;
     private static final long PLAYER_PANEL_PAUSED_REFRESH_MS = 20000L;
+    private static final boolean PLAYER_PANEL_DYNAMIC_PROGRESS = false;
+    private static final long PLAYER_PANEL_STATIC_REFRESH_SECONDS = 15L;
     private static final int MIN_FRAME_BUFFER_MS = 1400;
+    private static final int PLAYER_WAVEFORM_WIDTH = 520;
+    private static final int PLAYER_WAVEFORM_HEIGHT = 120;
+    private static final String PLAYER_WAVEFORM_FILENAME = "waveform.png";
 
     private final AudioPlayerManager playerManager;
     private final Map<Long, GuildMusicManager> musicManagers = new ConcurrentHashMap<>();
@@ -139,6 +159,7 @@ public class MusicController {
                     ignored -> {
                     }
                 );
+                schedulePlayerPanelRefresh(channel.getGuild(), 1500L);
             }
 
             @Override
@@ -167,6 +188,7 @@ public class MusicController {
                     ignored -> {
                     }
                 );
+                schedulePlayerPanelRefresh(channel.getGuild(), 1500L);
             }
 
             @Override
@@ -233,6 +255,7 @@ public class MusicController {
                         ignored -> {
                         }
                 );
+                schedulePlayerPanelRefresh(channel.getGuild(), 1500L);
             }
 
             @Override
@@ -260,6 +283,7 @@ public class MusicController {
                         ignored -> {
                         }
                 );
+                schedulePlayerPanelRefresh(channel.getGuild(), 1500L);
             }
 
             @Override
@@ -562,6 +586,26 @@ public class MusicController {
         return summary.toString().trim();
     }
 
+    public NowPlayingSnapshot nowPlayingSnapshot(long guildId) {
+        GuildMusicManager manager = musicManagers.get(guildId);
+        if (manager == null) {
+            return new NowPlayingSnapshot("none", "idle", 0L, 0L);
+        }
+
+        AudioTrack current = manager.player.getPlayingTrack();
+        if (current == null) {
+            return new NowPlayingSnapshot("none", "idle", 0L, 0L);
+        }
+
+        String state = manager.player.isPaused() ? "paused" : "playing";
+        return new NowPlayingSnapshot(
+                current.getInfo().title,
+                state,
+                manager.getCalculatedPositionMs(),
+                current.getDuration()
+        );
+    }
+
     public List<String> desktopQueueEntries(long guildId) {
         GuildMusicManager manager = musicManagers.get(guildId);
         if (manager == null || manager.scheduler.getQueue().isEmpty()) {
@@ -654,6 +698,19 @@ public class MusicController {
         channel.getGuild().getAudioManager().closeAudioConnection();
         updatePresence(channel.getGuild());
         cleanupRecentChatBlocking(channel, botOnlyCleanup);
+    }
+
+    public void stopFromAutoDisconnect(Guild guild, TextChannel channel) {
+        long guildId = guild.getIdLong();
+        stopCleanupUntilMillis.put(guildId, System.currentTimeMillis() + 10_000L);
+        clearPersistentPlayerPanel(guild);
+        GuildMusicManager musicManager = getGuildMusicManager(guild);
+        musicManager.scheduler.stop();
+        guild.getAudioManager().closeAudioConnection();
+        updatePresence(guild);
+        if (channel != null) {
+            channel.sendMessage(guildI18n(guild).t("disconnect.inactive")).queue();
+        }
     }
 
     public void setStopCleanupBotOnly(boolean enabled) {
@@ -869,6 +926,48 @@ public class MusicController {
         refreshPersistentPlayerPanel(channel.getGuild());
     }
 
+    public int currentVolumeForGuild(long guildId) {
+        GuildMusicManager manager = musicManagers.get(guildId);
+        if (manager == null) {
+            return DEFAULT_VOLUME;
+        }
+        return manager.player.getVolume();
+    }
+
+    public int currentBassForGuild(long guildId) {
+        GuildMusicManager manager = musicManagers.get(guildId);
+        if (manager == null) {
+            return 0;
+        }
+        return manager.getBassLevel();
+    }
+
+    public float[] visualizerLevelsForGuild(long guildId) {
+        GuildMusicManager manager = musicManagers.get(guildId);
+        if (manager == null) {
+            return new float[AudioVisualizer.BANDS];
+        }
+        return manager.getVisualizer().snapshot();
+    }
+
+    public void setVolumeFromDesktop(Guild guild, int volume) {
+        if (volume < 0 || volume > MAX_VOLUME) {
+            return;
+        }
+        GuildMusicManager musicManager = getGuildMusicManager(guild);
+        musicManager.player.setVolume(volume);
+        refreshPersistentPlayerPanel(guild);
+    }
+
+    public void setBassFromDesktop(Guild guild, int level) {
+        if (level < 0 || level > MAX_BASS) {
+            return;
+        }
+        GuildMusicManager musicManager = getGuildMusicManager(guild);
+        applyBassBoost(musicManager, level);
+        refreshPersistentPlayerPanel(guild);
+    }
+
     public String healthSummary() {
         int guildCount = musicManagers.size();
         int activePlayers = 0;
@@ -954,20 +1053,28 @@ public class MusicController {
 
     private void applyBassBoost(GuildMusicManager musicManager, int level) {
         if (level <= 0) {
-            musicManager.player.setFilterFactory(null);
             musicManager.setBassLevel(0);
+            applyFilters(musicManager);
             return;
         }
 
         float gain = Math.min(0.15f * level, 0.75f);
+        musicManager.setBassLevel(level);
         EqualizerFactory equalizer = new EqualizerFactory();
         equalizer.setGain(0, gain);
         equalizer.setGain(1, gain * 0.9f);
         equalizer.setGain(2, gain * 0.8f);
         equalizer.setGain(3, gain * 0.5f);
         equalizer.setGain(4, gain * 0.25f);
-        musicManager.player.setFilterFactory(equalizer);
-        musicManager.setBassLevel(level);
+        applyFilters(musicManager, equalizer);
+    }
+
+    private void applyFilters(GuildMusicManager musicManager) {
+        applyFilters(musicManager, null);
+    }
+
+    private void applyFilters(GuildMusicManager musicManager, EqualizerFactory equalizer) {
+        musicManager.player.setFilterFactory(new VisualizerFilterFactory(musicManager.getVisualizer(), equalizer));
     }
 
     private GuildMusicManager getGuildMusicManager(Guild guild) {
@@ -984,18 +1091,22 @@ public class MusicController {
                         startPlayerPanelAutoRefresh(guild);
                         updatePresence(guild);
                         lastTrackQueries.put(guild.getIdLong(), track.getInfo().title);
+                        playerPanelLastRenderedSignature.remove(guild.getIdLong());
                         refreshPersistentPlayerPanel(guild);
+                        schedulePlayerPanelRefresh(guild, 1200L);
                     },
                     () -> {
                         updatePresence(guild);
                         maybeAutoplay(guild, musicManagerRef(guild));
                         refreshPersistentPlayerPanel(guild);
+                        schedulePlayerPanelRefresh(guild, 1200L);
                     }
             );
             managerRef.set(musicManager);
 
             int defaultVolume = settingsStore.get(guild.getIdLong()).defaultVolume();
             musicManager.player.setVolume(Math.max(0, Math.min(MAX_VOLUME, defaultVolume)));
+            applyFilters(musicManager);
             guild.getAudioManager().setSendingHandler(musicManager.sendHandler);
             return musicManager;
         });
@@ -1018,7 +1129,7 @@ public class MusicController {
         return new I18n(settingsStore.get(guild.getIdLong()).language());
     }
 
-    private MessageEmbed buildPlayerEmbed(Guild guild, String prefix) {
+    private MessageEmbed buildPlayerEmbed(Guild guild, String prefix, boolean includeWaveform) {
         I18n localI18n = guildI18n(guild);
         GuildMusicManager musicManager = getGuildMusicManager(guild);
         AudioTrack current = musicManager.player.getPlayingTrack();
@@ -1037,7 +1148,7 @@ public class MusicController {
         String voiceValue = connectedChannel == null ? localI18n.t("player.notConnected") : connectedChannel.getName();
         String queueValue = buildQueuePreview(musicManager, localI18n);
 
-        return new EmbedBuilder()
+        EmbedBuilder builder = new EmbedBuilder()
                 .setTitle(localI18n.t("player.title"))
                 .setDescription(localI18n.t("player.hint", prefix))
                 .setColor(current == null ? new Color(120, 120, 120) : new Color(46, 204, 113))
@@ -1050,8 +1161,148 @@ public class MusicController {
                 )
                 .addField(localI18n.t("player.track"), trackValue, false)
                 .addField(localI18n.t("player.queuePreview"), queueValue, false)
-                .setFooter(localI18n.t("player.footer", prefix))
-                .build();
+                .setFooter(localI18n.t("player.footer", prefix));
+
+        if (includeWaveform) {
+            builder.setImage("attachment://" + PLAYER_WAVEFORM_FILENAME);
+        }
+
+        return builder.build();
+    }
+
+    private PlayerPanelPayload buildPlayerPanelPayload(Guild guild, String prefix) {
+        GuildMusicManager manager = getGuildMusicManager(guild);
+        I18n localI18n = guildI18n(guild);
+        FileUpload waveformUpload = buildWaveformUpload(manager, localI18n);
+        boolean includeWaveform = waveformUpload != null;
+        MessageEmbed embed = buildPlayerEmbed(guild, prefix, includeWaveform);
+        return new PlayerPanelPayload(embed, waveformUpload);
+    }
+
+    private FileUpload buildWaveformUpload(GuildMusicManager manager, I18n localI18n) {
+        AudioTrack current = manager.player.getPlayingTrack();
+        if (current == null) {
+            return null;
+        }
+
+        float[] levels = manager.getVisualizer().snapshot();
+        String title = current.getInfo().title;
+        boolean paused = manager.player.isPaused();
+        String label = buildNowPlayingLabel(localI18n, paused);
+        BufferedImage image = renderWaveformImage(levels, title, label);
+        try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            javax.imageio.ImageIO.write(image, "png", out);
+            return FileUpload.fromData(out.toByteArray(), PLAYER_WAVEFORM_FILENAME);
+        } catch (IOException ignored) {
+            return null;
+        }
+    }
+
+    private BufferedImage renderWaveformImage(float[] levels, String title, String label) {
+        int width = PLAYER_WAVEFORM_WIDTH;
+        int height = PLAYER_WAVEFORM_HEIGHT;
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = image.createGraphics();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+        g2.setColor(new Color(11, 16, 32, 210));
+        g2.fillRoundRect(0, 0, width, height, 20, 20);
+        g2.setColor(new Color(100, 130, 220, 40));
+        g2.setStroke(new BasicStroke(1.2f));
+        g2.drawRoundRect(2, 2, width - 4, height - 4, 18, 18);
+
+        int padding = 16;
+        String safeTitle = title == null ? "" : title.trim();
+        if (safeTitle.isBlank()) {
+            safeTitle = "Now playing";
+        }
+        int maxWidth = width - padding * 2;
+        Font titleFont = new Font("SansSerif", Font.BOLD, 26);
+        FontMetrics titleMetrics = g2.getFontMetrics(titleFont);
+        while (titleMetrics.stringWidth(safeTitle) > maxWidth && titleFont.getSize() > 18) {
+            titleFont = titleFont.deriveFont((float) (titleFont.getSize() - 2));
+            titleMetrics = g2.getFontMetrics(titleFont);
+        }
+        String displayTitle = fitTextToWidth(safeTitle, titleMetrics, maxWidth);
+
+        Font labelFont = new Font("SansSerif", Font.PLAIN, 12);
+        FontMetrics labelMetrics = g2.getFontMetrics(labelFont);
+        String safeLabel = label == null || label.isBlank() ? "Now Playing" : label;
+        String labelText = fitTextToWidth(safeLabel, labelMetrics, maxWidth);
+
+        int totalTextHeight = labelMetrics.getHeight() + titleMetrics.getHeight();
+        int top = (height - totalTextHeight) / 2;
+        int labelY = top + labelMetrics.getAscent();
+        int titleY = top + labelMetrics.getHeight() + titleMetrics.getAscent();
+
+        g2.setFont(labelFont);
+        g2.setColor(new Color(169, 180, 214, 190));
+        int labelX = (width - labelMetrics.stringWidth(labelText)) / 2;
+        g2.drawString(labelText, labelX, labelY);
+
+        g2.setFont(titleFont);
+        int textX = (width - titleMetrics.stringWidth(displayTitle)) / 2;
+        TextLayout layout = new TextLayout(displayTitle, titleFont, g2.getFontRenderContext());
+        Shape outline = layout.getOutline(AffineTransform.getTranslateInstance(textX, titleY));
+        g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.4f));
+        g2.setColor(new Color(73, 216, 255));
+        g2.setStroke(new BasicStroke(5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g2.draw(outline);
+        g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.35f));
+        g2.setColor(new Color(157, 92, 255));
+        g2.setStroke(new BasicStroke(2.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g2.draw(outline);
+        g2.setComposite(AlphaComposite.SrcOver);
+        g2.setColor(new Color(238, 244, 255));
+        g2.fill(outline);
+
+        g2.dispose();
+        return image;
+    }
+
+    private String buildNowPlayingLabel(I18n localI18n, boolean paused) {
+        if (paused) {
+            return localI18n.t("player.state.paused");
+        }
+        String code = localI18n.code();
+        if ("en".equals(code) || "ru".equals(code)) {
+            return stripTrailingLabel(localI18n.t("now.playing", ""));
+        }
+        return localI18n.t("player.state.playing");
+    }
+
+    private String stripTrailingLabel(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String text = raw.trim();
+        while (!text.isEmpty()) {
+            char last = text.charAt(text.length() - 1);
+            if (last == ':' || last == '-' || last == '–') {
+                text = text.substring(0, text.length() - 1).trim();
+            } else {
+                break;
+            }
+        }
+        return text;
+    }
+
+    private String fitTextToWidth(String text, FontMetrics metrics, int maxWidth) {
+        if (metrics.stringWidth(text) <= maxWidth) {
+            return text;
+        }
+        String ellipsis = "...";
+        int ellipsisWidth = metrics.stringWidth(ellipsis);
+        int end = text.length();
+        while (end > 0 && metrics.stringWidth(text.substring(0, end)) + ellipsisWidth > maxWidth) {
+            end--;
+        }
+        if (end <= 0) {
+            return ellipsis;
+        }
+        return text.substring(0, end) + ellipsis;
     }
 
     private void ensurePersistentPlayerPanel(TextChannel channel) {
@@ -1067,6 +1318,9 @@ public class MusicController {
     }
 
     private String buildTrackValue(GuildMusicManager musicManager, AudioTrack current) {
+        if (!PLAYER_PANEL_DYNAMIC_PROGRESS) {
+            return current.getInfo().title;
+        }
         long position = musicManager.getCalculatedPositionMs();
         long duration = current.getDuration();
 
@@ -1127,23 +1381,49 @@ public class MusicController {
         }
 
         if (messageId != null) {
-            channel.retrieveMessageById(messageId).queue(existing ->
-                    existing.editMessageEmbeds(buildPlayerEmbed(channel.getGuild(), prefix))
-                            .setComponents(playerComponents(guildI18n(channel.getGuild())))
-                            .queue(
-                        ignored -> {
-                        panelEditCount.incrementAndGet();
-                        playerPanelLastRenderedSignature.put(guildId, nextSignature);
-                        finishPlayerPanelRefresh(guild, inFlight, pending);
-                        },
-                                    ignored -> postNewPlayerPanel(guild, channel, prefix, inFlight, pending)
-                            ),
+            if (shouldRepostPlayerPanel(channel, messageId)) {
+                channel.retrieveMessageById(messageId).queue(existing ->
+                                existing.delete().queue(
+                                        ignored -> postNewPlayerPanel(guild, channel, prefix, inFlight, pending),
+                                        ignored -> postNewPlayerPanel(guild, channel, prefix, inFlight, pending)
+                                ),
+                        ignored -> postNewPlayerPanel(guild, channel, prefix, inFlight, pending)
+                );
+                return;
+            }
+            PlayerPanelPayload payload = buildPlayerPanelPayload(channel.getGuild(), prefix);
+            channel.retrieveMessageById(messageId).queue(existing -> {
+                        var edit = existing.editMessageEmbeds(payload.embed())
+                                .setComponents(playerComponents(guildI18n(channel.getGuild())));
+                        if (payload.waveformUpload() != null) {
+                            edit.setFiles(Collections.singletonList(payload.waveformUpload()));
+                        } else {
+                            edit.setFiles(Collections.emptyList());
+                        }
+                        edit.queue(
+                                ignored -> {
+                                    panelEditCount.incrementAndGet();
+                                    playerPanelLastRenderedSignature.put(guildId, nextSignature);
+                                    finishPlayerPanelRefresh(guild, inFlight, pending);
+                                },
+                                ignored -> postNewPlayerPanel(guild, channel, prefix, inFlight, pending)
+                        );
+                    },
                     ignored -> postNewPlayerPanel(guild, channel, prefix, inFlight, pending)
             );
             return;
         }
 
         postNewPlayerPanel(guild, channel, prefix, inFlight, pending);
+    }
+
+    private boolean shouldRepostPlayerPanel(TextChannel channel, long messageId) {
+        try {
+            long latestId = channel.getLatestMessageIdLong();
+            return latestId != 0L && latestId != messageId;
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private void postNewPlayerPanel(
@@ -1154,15 +1434,19 @@ public class MusicController {
             AtomicBoolean pending
     ) {
         long guildId = channel.getGuild().getIdLong();
-        channel.sendMessageEmbeds(buildPlayerEmbed(channel.getGuild(), prefix))
-            .setComponents(playerComponents(guildI18n(channel.getGuild())))
-                .queue(message -> {
-                    panelCreateCount.incrementAndGet();
-                    playerPanelChannelIds.put(guildId, channel.getIdLong());
-                    playerPanelMessageIds.put(guildId, message.getIdLong());
-                    playerPanelLastRenderedSignature.put(guildId, buildPlayerPanelSignature(channel.getGuild(), prefix));
-                    finishPlayerPanelRefresh(guild, inFlight, pending);
-                }, ignored -> finishPlayerPanelRefresh(guild, inFlight, pending));
+        PlayerPanelPayload payload = buildPlayerPanelPayload(channel.getGuild(), prefix);
+        var create = channel.sendMessageEmbeds(payload.embed())
+                .setComponents(playerComponents(guildI18n(channel.getGuild())));
+        if (payload.waveformUpload() != null) {
+            create.addFiles(payload.waveformUpload());
+        }
+        create.queue(message -> {
+            panelCreateCount.incrementAndGet();
+            playerPanelChannelIds.put(guildId, channel.getIdLong());
+            playerPanelMessageIds.put(guildId, message.getIdLong());
+            playerPanelLastRenderedSignature.put(guildId, buildPlayerPanelSignature(channel.getGuild(), prefix));
+            finishPlayerPanelRefresh(guild, inFlight, pending);
+        }, ignored -> finishPlayerPanelRefresh(guild, inFlight, pending));
     }
 
     private void finishPlayerPanelRefresh(Guild guild, AtomicBoolean inFlight, AtomicBoolean pending) {
@@ -1193,6 +1477,10 @@ public class MusicController {
 
         String prefix = settingsStore.get(guild.getIdLong()).prefix();
         refreshOrCreatePlayerPanel(channel, prefix);
+    }
+
+    private void schedulePlayerPanelRefresh(Guild guild, long delayMillis) {
+        playerPanelRefresher.schedule(() -> refreshPersistentPlayerPanel(guild), delayMillis, TimeUnit.MILLISECONDS);
     }
 
     private TextChannel resolvePlayerPanelChannel(Guild guild) {
@@ -1245,6 +1533,7 @@ public class MusicController {
                 return existing;
             }
 
+            long tickSeconds = PLAYER_PANEL_DYNAMIC_PROGRESS ? PLAYER_PANEL_REFRESH_TICK_SECONDS : PLAYER_PANEL_STATIC_REFRESH_SECONDS;
             return playerPanelRefresher.scheduleAtFixedRate(() -> {
                 GuildMusicManager manager = musicManagerRef(guild);
                 if (manager == null) {
@@ -1255,6 +1544,11 @@ public class MusicController {
                 AudioTrack current = manager.player.getPlayingTrack();
                 if (current == null) {
                     stopPlayerPanelAutoRefresh(guildId);
+                    return;
+                }
+
+                if (!PLAYER_PANEL_DYNAMIC_PROGRESS) {
+                    refreshPersistentPlayerPanel(guild);
                     return;
                 }
 
@@ -1278,7 +1572,7 @@ public class MusicController {
                 playerPanelLastAutoRefreshSecond.put(guildId, currentSecond);
                 playerPanelLastAutoRefreshMillis.put(guildId, now);
                 refreshPersistentPlayerPanel(guild);
-            }, PLAYER_PANEL_REFRESH_TICK_SECONDS, PLAYER_PANEL_REFRESH_TICK_SECONDS, TimeUnit.SECONDS);
+            }, tickSeconds, tickSeconds, TimeUnit.SECONDS);
         });
     }
 
@@ -1494,7 +1788,7 @@ public class MusicController {
                 state,
                 trackTitle,
                 trackUri,
-                Long.toString(positionBucket),
+                PLAYER_PANEL_DYNAMIC_PROGRESS ? Long.toString(positionBucket) : "static",
                 Long.toString(duration),
                 Integer.toString(musicManager.player.getVolume()),
                 Integer.toString(musicManager.getBassLevel()),
@@ -1783,7 +2077,18 @@ public class MusicController {
     ) {
     }
 
+    public record NowPlayingSnapshot(
+            String title,
+            String state,
+            long positionMs,
+            long durationMs
+    ) {
+    }
+
     private record PendingSearch(long requesterId, List<AudioTrack> tracks) {
+    }
+
+    private record PlayerPanelPayload(MessageEmbed embed, FileUpload waveformUpload) {
     }
 
     public record SearchSelectionOutcome(boolean success, String message) {

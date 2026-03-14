@@ -10,6 +10,7 @@ public class GuildMusicManager {
     public final AudioPlayer player;
     public final TrackScheduler scheduler;
     public final AudioPlayerSendHandler sendHandler;
+    private final AudioVisualizer visualizer;
     private int bassLevel;
     private String timingTrackId;
     private long timingAnchorTrackPosMs;
@@ -21,6 +22,7 @@ public class GuildMusicManager {
         this.player.setVolume(100);
         this.scheduler = new TrackScheduler(player, onTrackStart, onQueueEmpty);
         this.sendHandler = new AudioPlayerSendHandler(player);
+        this.visualizer = new AudioVisualizer();
         this.player.addListener(scheduler);
     }
 
@@ -30,6 +32,10 @@ public class GuildMusicManager {
 
     public void setBassLevel(int bassLevel) {
         this.bassLevel = bassLevel;
+    }
+
+    public AudioVisualizer getVisualizer() {
+        return visualizer;
     }
 
     public void markTrackStarted() {

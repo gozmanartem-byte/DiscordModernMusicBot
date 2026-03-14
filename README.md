@@ -1,13 +1,13 @@
 # DiscordModernMusicBot
 
-![Version](https://img.shields.io/badge/Version-1.1.0-brightgreen)
+![Version](https://img.shields.io/badge/Version-2.0.0-brightgreen)
 ![Java 25](https://img.shields.io/badge/Java-25-blue)
 ![Maven 3.9+](https://img.shields.io/badge/Maven-3.9%2B-C71A36)
 ![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 
 Modern Java Discord music bot built with JDA, Lavaplayer, youtube-source, and JDave voice encryption support (including E2EE/DAVE).
 
-**As of v1.1.0, ModernMusicBot is a native desktop app.** Download the installer for your platform, install it like any other program, enter your bot token, and start the bot — no Java, no terminal, no config files to hunt down.
+**As of v2.0.0, ModernMusicBot is a native desktop app.** Download the installer for your platform, install it like any other program, enter your bot token, and start the bot — no Java, no terminal, no config files to hunt down.
 
 ## Features
 
@@ -36,7 +36,7 @@ Modern Java Discord music bot built with JDA, Lavaplayer, youtube-source, and JD
 
 ## Which Version Should I Use?
 
-**v1.1.0 (this release)** is recommended for everyone. It's a proper desktop app with native installers — no Java setup, no terminal.
+**v2.0.0 (this release)** is recommended for everyone. It's a proper desktop app with native installers — no Java setup, no terminal.
 
 **v1.0.0** is there if you need the raw, script-only version — for example, if you're running the bot headlessly on a server, deploying via Docker/CI, or just prefer full manual control with no bundled runtime. You can find it on the [Releases](../../releases) page.
 
@@ -171,7 +171,7 @@ Output goes to `dist/releases/`. Native installers (`.dmg`, `.exe`) are built by
 Version naming behavior:
 
 - Uses `RELEASE_VERSION` env var when provided.
-- Uses the Git tag name automatically in the release workflow (e.g. `v1.1.0` → `1.1.0`).
+- Uses the Git tag name automatically in the release workflow (e.g. `v2.0.0` → `2.0.0`).
 - Falls back to Maven `project.version` otherwise.
 
 Packaged targets:
