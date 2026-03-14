@@ -105,6 +105,7 @@ FunctionEnd
 Function CreateBg
   ${NSD_CreateBitmap} 0 0 100% 100% ""
   Pop $BgImage
+  Push $Dialog
   Call GetClientSize
   Pop $1
   Pop $0
@@ -113,15 +114,17 @@ Function CreateBg
 FunctionEnd
 
 Function GetClientSize
-  System::Call 'user32::GetClientRect(i $HWNDPARENT, *i .r1, *i .r2, *i .r3, *i .r4)'
-  IntOp $0 $3 - $1
-  IntOp $1 $4 - $2
-  Push $0
+  Exch $0
+  System::Call 'user32::GetClientRect(i $0, *i .r1, *i .r2, *i .r3, *i .r4)'
+  IntOp $1 $3 - $1
+  IntOp $2 $4 - $2
   Push $1
+  Push $2
 FunctionEnd
 
 Function ApplyBackgroundToParent
   Exch $0
+  Push $0
   Call GetClientSize
   Pop $2
   Pop $1
