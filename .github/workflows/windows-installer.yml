@@ -150,7 +150,8 @@ jobs:
           if (-not (Test-Path $makensis)) {
             throw "NSIS compiler not found at $makensis"
           }
-          & $makensis "/DAPP_VERSION=$version" "installer\\ModernMusicBot.nsi"
+          $rootDir = $env:GITHUB_WORKSPACE
+          & $makensis "/DAPP_VERSION=$version" "/DROOT_DIR=$rootDir" "installer\\ModernMusicBot.nsi"
 
       - name: Upload branded installer
         uses: actions/upload-artifact@v4

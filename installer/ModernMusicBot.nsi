@@ -2,7 +2,9 @@
 !include "LogicLib.nsh"
 !include "WinMessages.nsh"
 
+!ifndef ROOT_DIR
 !define ROOT_DIR "${__FILEDIR__}\\.."
+!endif
 
 !define APP_NAME "ModernMusicBot"
 !define APP_PUBLISHER "DiscordModernMusicBot"
