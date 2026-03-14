@@ -241,11 +241,6 @@ Function InstFilesTimer
   ${EndIf}
 FunctionEnd
 
-Function InstFilesLeave
-  KillTimer $HWNDPARENT InstFilesTimer
-FunctionEnd
-
-
 Function InstFilesShow
   Push $HWNDPARENT
   Call ApplyBackgroundToParent
@@ -290,7 +285,7 @@ FunctionEnd
 Page custom WelcomeCreate
 Page custom DirectoryCreate
 PageEx instfiles
-  PageCallbacks "" InstFilesShow InstFilesLeave
+  PageCallbacks "" InstFilesShow ""
 PageExEnd
 Page custom FinishCreate
 
