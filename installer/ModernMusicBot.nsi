@@ -234,13 +234,6 @@ Function OnCancel
   SendMessage $HWNDPARENT ${WM_COMMAND} 2 0
 FunctionEnd
 
-Function InstFilesTimer
-  ${If} $ProgressNative != 0
-    System::Call 'user32::SendMessageW(i $ProgressNative, i ${PBM_GETPOS}, i 0, i 0) i.r0'
-    System::Call 'user32::SendMessageW(i $ProgressCustom, i ${PBM_SETPOS}, i r0, i 0)'
-  ${EndIf}
-FunctionEnd
-
 Function InstFilesShow
   Push $HWNDPARENT
   Call ApplyBackgroundToParent
@@ -248,7 +241,7 @@ Function InstFilesShow
   System::Call 'user32::FindWindowExW(i $HWNDPARENT, i 0, w "msctls_progress32", w "") i.r0'
   StrCpy $ProgressNative $0
   ${If} $ProgressNative != 0
-    ShowWindow $ProgressNative 0
+    ShowWindow $ProgressNative 1
   ${EndIf}
 
   System::Call 'user32::CreateWindowExW(i 0, w "STATIC", w "", i 0x5000000E, i 220, i 350, i 380, i 26, i $HWNDPARENT, i 0, i 0, i 0) i.r1'
@@ -256,13 +249,13 @@ Function InstFilesShow
   SendMessage $1 ${BM_SETIMAGE} ${IMAGE_BITMAP} $2
   StrCpy $ProgressFrame $1
 
-  System::Call 'user32::CreateWindowExW(i 0, w "msctls_progress32", w "", i 0x50000000, i 230, i 356, i 360, i 14, i $HWNDPARENT, i 0, i 0, i 0) i.r1'
-  StrCpy $ProgressCustom $1
-  System::Call 'user32::GetWindowLongW(i $ProgressCustom, i -16) i.r2'
-  System::Call 'user32::SetWindowLongW(i $ProgressCustom, i -16, i r2|${PBS_SMOOTH})'
-  System::Call 'user32::SendMessageW(i $ProgressCustom, i ${PBM_SETRANGE}, i 0, i 65535)'
-  System::Call 'user32::SendMessageW(i $ProgressCustom, i ${PBM_SETBKCOLOR}, i 0, i 0x00301E12)'
-  System::Call 'user32::SendMessageW(i $ProgressCustom, i ${PBM_SETBARCOLOR}, i 0, i 0x00F0B060)'
+  ${If} $ProgressNative != 0
+    System::Call 'user32::SetWindowPos(i $ProgressNative, i 0, i 230, i 356, i 360, i 14, i 0)'
+    System::Call 'user32::GetWindowLongW(i $ProgressNative, i -16) i.r2'
+    System::Call 'user32::SetWindowLongW(i $ProgressNative, i -16, i r2|${PBS_SMOOTH})'
+    System::Call 'user32::SendMessageW(i $ProgressNative, i ${PBM_SETBKCOLOR}, i 0, i 0x00301E12)'
+    System::Call 'user32::SendMessageW(i $ProgressNative, i ${PBM_SETBARCOLOR}, i 0, i 0x00F0B060)'
+  ${EndIf}
 
   GetDlgItem $0 $HWNDPARENT 1
   Push $0
@@ -279,7 +272,6 @@ Function InstFilesShow
   Push "$PLUGINSDIR\\btn_back.bmp"
   Call ApplyButtonBitmap
 
-  SetTimer $HWNDPARENT InstFilesTimer 120
 FunctionEnd
 
 Page custom WelcomeCreate
