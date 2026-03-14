@@ -29,16 +29,15 @@ jobs:
       - name: Package Windows app image
         shell: pwsh
         run: |
-          $version = "${{ github.event.inputs.version }}"
+          $version = "${{ github.event.inputs.version }}".Trim()
           if ($version.StartsWith("v")) {
             $version = $version.Substring(1)
           }
-          if ([string]::IsNullOrWhiteSpace($version) -or ($version -notmatch '^[0-9]+(\\.[0-9]+){1,3}([.-][0-9A-Za-z]+)?$')) {
-            [xml]$pom = Get-Content pom.xml
-            $version = $pom.project.version
-            if ($version.StartsWith("v")) {
-              $version = $version.Substring(1)
-            }
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            $version = (mvn -q -DforceStdout help:evaluate -Dexpression=project.version | Select-Object -Last 1).Trim()
+          }
+          if ($version.StartsWith("v")) {
+            $version = $version.Substring(1)
           }
           if ([string]::IsNullOrWhiteSpace($version) -or ($version -notmatch '^[0-9]+(\\.[0-9]+){1,3}([.-][0-9A-Za-z]+)?$')) {
             throw "Could not resolve a valid semantic version for Windows installer build."
@@ -113,16 +112,15 @@ jobs:
       - name: Build branded EXE installer
         shell: pwsh
         run: |
-          $version = "${{ github.event.inputs.version }}"
+          $version = "${{ github.event.inputs.version }}".Trim()
           if ($version.StartsWith("v")) {
             $version = $version.Substring(1)
           }
-          if ([string]::IsNullOrWhiteSpace($version) -or ($version -notmatch '^[0-9]+(\\.[0-9]+){1,3}([.-][0-9A-Za-z]+)?$')) {
-            [xml]$pom = Get-Content pom.xml
-            $version = $pom.project.version
-            if ($version.StartsWith("v")) {
-              $version = $version.Substring(1)
-            }
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            $version = (mvn -q -DforceStdout help:evaluate -Dexpression=project.version | Select-Object -Last 1).Trim()
+          }
+          if ($version.StartsWith("v")) {
+            $version = $version.Substring(1)
           }
           if ([string]::IsNullOrWhiteSpace($version) -or ($version -notmatch '^[0-9]+(\\.[0-9]+){1,3}([.-][0-9A-Za-z]+)?$')) {
             throw "Could not resolve a valid semantic version for branded Windows installer build."
