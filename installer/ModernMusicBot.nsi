@@ -145,8 +145,9 @@ Function ApplyButtonBitmap
   Exch $1 ; bmp path
   Exch 1
   Exch $0 ; hwnd
-  System::Call 'user32::SetWindowLongW(i $0, i -16, i ${BS_BITMAP}|${BS_FLAT}|${WS_TABSTOP})'
   System::Call 'user32::LoadImageW(i 0, w "$1", i ${IMAGE_BITMAP}, i 0, i 0, i ${LR_LOADFROMFILE}) i.r2'
+  StrCmp $2 0 +3
+  System::Call 'user32::SetWindowLongW(i $0, i -16, i ${BS_BITMAP}|${BS_FLAT}|${WS_TABSTOP})'
   SendMessage $0 ${BM_SETIMAGE} ${IMAGE_BITMAP} $2
 FunctionEnd
 
@@ -168,22 +169,22 @@ Function WelcomeCreate
   nsDialogs::Create 1018
   Pop $Dialog
   Call CreateBg
-  Call HideDefaultButtons
   System::Call 'user32::SetWindowTextW(i $HWNDPARENT, w "ModernMusicBot Setup")'
 
-  Push "78%"
-  Push "70%"
+  GetDlgItem $0 $HWNDPARENT 1
+  ShowWindow $0 1
+  Push $0
   Push "$PLUGINSDIR\\btn_next.bmp"
-  Call CreateImageButton
-  Pop $NextBtn
-  ${NSD_OnClick} $NextBtn OnNext
+  Call ApplyButtonBitmap
 
-  Push "78%"
-  Push "79%"
+  GetDlgItem $0 $HWNDPARENT 2
+  ShowWindow $0 1
+  Push $0
   Push "$PLUGINSDIR\\btn_cancel.bmp"
-  Call CreateImageButton
-  Pop $CancelBtn
-  ${NSD_OnClick} $CancelBtn OnCancel
+  Call ApplyButtonBitmap
+
+  GetDlgItem $0 $HWNDPARENT 3
+  ShowWindow $0 0
 
   nsDialogs::Show
 FunctionEnd
@@ -192,7 +193,6 @@ Function DirectoryCreate
   nsDialogs::Create 1018
   Pop $Dialog
   Call CreateBg
-  Call HideDefaultButtons
   System::Call 'user32::SetWindowTextW(i $HWNDPARENT, w "ModernMusicBot Setup")'
 
   ${NSD_CreateText} 8% 60% 58% 6% "$INSTDIR"
@@ -201,26 +201,23 @@ Function DirectoryCreate
   Pop $BrowseBtn
   ${NSD_OnClick} $BrowseBtn OnBrowse
 
-  Push "8%"
-  Push "80%"
-  Push "$PLUGINSDIR\\btn_back.bmp"
-  Call CreateImageButton
-  Pop $BackBtn
-  ${NSD_OnClick} $BackBtn OnBack
-
-  Push "78%"
-  Push "80%"
+  GetDlgItem $0 $HWNDPARENT 1
+  ShowWindow $0 1
+  Push $0
   Push "$PLUGINSDIR\\btn_next.bmp"
-  Call CreateImageButton
-  Pop $NextBtn
-  ${NSD_OnClick} $NextBtn OnNext
+  Call ApplyButtonBitmap
 
-  Push "78%"
-  Push "89%"
+  GetDlgItem $0 $HWNDPARENT 2
+  ShowWindow $0 1
+  Push $0
   Push "$PLUGINSDIR\\btn_cancel.bmp"
-  Call CreateImageButton
-  Pop $CancelBtn
-  ${NSD_OnClick} $CancelBtn OnCancel
+  Call ApplyButtonBitmap
+
+  GetDlgItem $0 $HWNDPARENT 3
+  ShowWindow $0 1
+  Push $0
+  Push "$PLUGINSDIR\\btn_back.bmp"
+  Call ApplyButtonBitmap
 
   nsDialogs::Show
 FunctionEnd
@@ -229,14 +226,19 @@ Function FinishCreate
   nsDialogs::Create 1018
   Pop $Dialog
   Call CreateBg
-  Call HideDefaultButtons
+  System::Call 'user32::SetWindowTextW(i $HWNDPARENT, w "ModernMusicBot Setup")'
 
-  Push "78%"
-  Push "80%"
+  GetDlgItem $0 $HWNDPARENT 1
+  ShowWindow $0 1
+  Push $0
   Push "$PLUGINSDIR\\btn_finish.bmp"
-  Call CreateImageButton
-  Pop $FinishBtn
-  ${NSD_OnClick} $FinishBtn OnNext
+  Call ApplyButtonBitmap
+
+  GetDlgItem $0 $HWNDPARENT 2
+  ShowWindow $0 0
+
+  GetDlgItem $0 $HWNDPARENT 3
+  ShowWindow $0 0
 
   nsDialogs::Show
 FunctionEnd
