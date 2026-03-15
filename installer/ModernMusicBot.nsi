@@ -200,8 +200,8 @@ FunctionEnd
 Function WelcomeCreate
   nsDialogs::Create 1018
   Pop $Dialog
-  Call AdjustDialogForButtons
   Call CreateBg
+  System::Call 'user32::SetWindowPos(i $Dialog, i ${HWND_BOTTOM}, i 0, i 0, i 0, i 0, i ${SWP_NOMOVE}|${SWP_NOSIZE})'
   System::Call 'user32::SetWindowTextW(i $HWNDPARENT, w "ModernMusicBot Setup")'
 
   GetDlgItem $0 $HWNDPARENT 1
@@ -225,8 +225,8 @@ FunctionEnd
 Function DirectoryCreate
   nsDialogs::Create 1018
   Pop $Dialog
-  Call AdjustDialogForButtons
   Call CreateBg
+  System::Call 'user32::SetWindowPos(i $Dialog, i ${HWND_BOTTOM}, i 0, i 0, i 0, i 0, i ${SWP_NOMOVE}|${SWP_NOSIZE})'
   System::Call 'user32::SetWindowTextW(i $HWNDPARENT, w "ModernMusicBot Setup")'
 
   ${NSD_CreateText} 8% 60% 58% 6% "$INSTDIR"
@@ -259,8 +259,8 @@ FunctionEnd
 Function FinishCreate
   nsDialogs::Create 1018
   Pop $Dialog
-  Call AdjustDialogForButtons
   Call CreateBg
+  System::Call 'user32::SetWindowPos(i $Dialog, i ${HWND_BOTTOM}, i 0, i 0, i 0, i 0, i ${SWP_NOMOVE}|${SWP_NOSIZE})'
   System::Call 'user32::SetWindowTextW(i $HWNDPARENT, w "ModernMusicBot Setup")'
 
   GetDlgItem $0 $HWNDPARENT 1
