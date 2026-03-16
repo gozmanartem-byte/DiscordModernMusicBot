@@ -14,7 +14,7 @@ Name "${APP_NAME}"
 OutFile "${ROOT_DIR}\\dist\\releases\\DiscordModernMusicBot-v${APP_VERSION}-windows-installer.exe"
 InstallDir "$PROGRAMFILES\\${APP_NAME}"
 InstallDirRegKey HKCU "Software\\${APP_NAME}" "InstallDir"
-RequestExecutionLevel user
+RequestExecutionLevel admin
 ShowInstDetails nevershow
 AutoCloseWindow false
 Unicode true
@@ -22,13 +22,15 @@ Unicode true
 !define MUI_ABORTWARNING
 
 !insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_LANGUAGE "English"
 
-Section "Install"
+Section "Install" SEC_INSTALL
+  SectionIn RO
   SetOutPath "$INSTDIR"
   WriteRegStr HKCU "Software\\${APP_NAME}" "InstallDir" "$INSTDIR"
   File /r "${ROOT_DIR}\\dist\\jpackage\\ModernMusicBot\\*"
@@ -36,5 +38,8 @@ Section "Install"
   File "${ROOT_DIR}\\README.md"
   File "${ROOT_DIR}\\README_INSTALLATION.md"
   File "${ROOT_DIR}\\LICENSE"
+SectionEnd
+
+Section /o "Desktop Shortcut" SEC_DESKTOP
   CreateShortCut "$DESKTOP\\ModernMusicBot.lnk" "$INSTDIR\\ModernMusicBot.exe"
 SectionEnd
