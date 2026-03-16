@@ -154,6 +154,11 @@ jobs:
         with:
           platforms: arm64
 
+      - name: Install AppImage tooling (host)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y desktop-file-utils
+
       - name: Build Linux aarch64 installers (AppImage, deb, rpm)
         run: |
           docker run --rm --platform=linux/arm64 \
@@ -204,6 +209,12 @@ jobs:
                 --vendor "DiscordModernMusicBot" \
                 --description "ModernMusicBot desktop launcher" \
                 --java-options "--enable-native-access=ALL-UNNAMED"
+
+              if [[ ! -d dist/jpackage/ModernMusicBot ]]; then
+                echo "jpackage app-image output missing; contents of dist/jpackage:" >&2
+                ls -la dist/jpackage >&2 || true
+                exit 1
+              fi
 
               jpackage \
                 --type deb \
@@ -267,12 +278,29 @@ jobs:
                 "exec \"\$HERE/usr/bin/ModernMusicBot\" \"\$@\"" \
                 > "$APPDIR/AppRun"
               chmod +x "$APPDIR/AppRun"
-
-              curl -L -o appimagetool.AppImage https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage
-              chmod +x appimagetool.AppImage
-              ./appimagetool.AppImage --appimage-extract
-              ARCH=aarch64 ./squashfs-root/usr/bin/appimagetool "$APPDIR" "dist/releases/DiscordModernMusicBot-v${VERSION}-linux-aarch64.AppImage"
             '
+
+      - name: Build Linux aarch64 AppImage (host)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ github.event.inputs.version }}"
+          if [[ -z "$VERSION" ]]; then
+            VERSION="$(grep -m1 '<version>' pom.xml | sed -E 's/.*<version>([^<]+)<\/version>.*/\1/')"
+          fi
+          VERSION="${VERSION#v}"
+
+          APPDIR="dist/appimage/ModernMusicBot.AppDir"
+          if [[ ! -d "$APPDIR" ]]; then
+            echo "AppDir not found at $APPDIR" >&2
+            exit 1
+          fi
+
+          curl -L -o appimagetool.AppImage https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool.AppImage
+          ./appimagetool.AppImage --appimage-extract
+          ARCH=aarch64 ./squashfs-root/usr/bin/appimagetool "$APPDIR" "dist/releases/DiscordModernMusicBot-v${VERSION}-linux-aarch64.AppImage"
 
       - name: Upload Linux aarch64 installers
         uses: actions/upload-artifact@v4
