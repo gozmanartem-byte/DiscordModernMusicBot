@@ -328,107 +328,110 @@ EOF
           path: dist/releases/*-linux-x86_64.*
 
   build-linux-installers-aarch64:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Java 25
-        uses: actions/setup-java@v4
+      - name: Set up QEMU for arm64
+        uses: docker/setup-qemu-action@v3
         with:
-          distribution: temurin
-          java-version: '25'
-          cache: maven
-
-      - name: Install Linux packaging deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y fakeroot rpm
+          platforms: arm64
 
       - name: Build Linux aarch64 installers (AppImage, deb, rpm)
-        shell: bash
         run: |
-          set -euo pipefail
+          docker run --rm --platform=linux/arm64 \
+            -v "${{ github.workspace }}:/workspace" \
+            -w /workspace ubuntu:24.04 bash -lc '
+              set -euo pipefail
+              apt-get update
+              apt-get install -y ca-certificates curl git maven zip fakeroot rpm dpkg-dev
 
-          VERSION="${GITHUB_REF_NAME:-}"
-          if [[ "$VERSION" != v* ]]; then
-            VERSION="$(grep -m1 '<version>' pom.xml | sed -E 's/.*<version>([^<]+)<\/version>.*/\1/')"
-          fi
-          VERSION="${VERSION#v}"
+              VERSION="${GITHUB_REF_NAME:-}"
+              if [[ "$VERSION" != v* ]]; then
+                VERSION="$(grep -m1 "<version>" pom.xml | sed -E "s/.*<version>([^<]+)<\\/version>.*/\\1/")"
+              fi
+              VERSION="${VERSION#v}"
 
-          rm -rf dist/jpackage dist/releases dist/appimage
-          mkdir -p dist/jpackage/input dist/releases
+              rm -rf dist/jpackage dist/releases dist/appimage
+              mkdir -p dist/jpackage/input dist/releases
 
-          mvn -q -DskipTests package -Plinux-aarch64
+              curl -L -o /tmp/jdk.tar.gz "https://api.adoptium.net/v3/binary/latest/25/ga/linux/aarch64/jdk/hotspot/normal/eclipse"
+              mkdir -p /opt/jdk
+              tar -xzf /tmp/jdk.tar.gz -C /opt/jdk
+              export JAVA_HOME=$(ls -d /opt/jdk/jdk-* | head -n 1)
+              export PATH="$JAVA_HOME/bin:$PATH"
 
-          JAR="$(find target -maxdepth 1 -name '*-jar-with-dependencies.jar' | head -n 1)"
-          if [[ -z "$JAR" ]]; then
-            echo "jar-with-dependencies artifact not found" >&2
-            exit 1
-          fi
+              mvn -q -DskipTests package -Plinux-aarch64
 
-          cp "$JAR" dist/jpackage/input/DiscordModernMusicBot.jar
-          cp ModernMusicBot.properties.example dist/jpackage/input/
-          cp README.md dist/jpackage/input/
-          cp README_INSTALLATION.md dist/jpackage/input/
-          cp LICENSE dist/jpackage/input/
+              JAR="$(find target -maxdepth 1 -name "*-jar-with-dependencies.jar" | head -n 1)"
+              if [[ -z "$JAR" ]]; then
+                echo "jar-with-dependencies artifact not found" >&2
+                exit 1
+              fi
 
-          jpackage \
-            --type app-image \
-            --name ModernMusicBot \
-            --input dist/jpackage/input \
-            --main-jar DiscordModernMusicBot.jar \
-            --main-class com.artem.musicbot.ControlPanelApp \
-            --icon src/main/resources/app-icon.png \
-            --dest dist/jpackage \
-            --app-version "$VERSION" \
-            --vendor "DiscordModernMusicBot" \
-            --description "ModernMusicBot desktop launcher" \
-            --java-options "--enable-native-access=ALL-UNNAMED"
+              cp "$JAR" dist/jpackage/input/DiscordModernMusicBot.jar
+              cp ModernMusicBot.properties.example dist/jpackage/input/
+              cp README.md dist/jpackage/input/
+              cp README_INSTALLATION.md dist/jpackage/input/
+              cp LICENSE dist/jpackage/input/
 
-          jpackage \
-            --type deb \
-            --name ModernMusicBot \
-            --input dist/jpackage/input \
-            --main-jar DiscordModernMusicBot.jar \
-            --main-class com.artem.musicbot.ControlPanelApp \
-            --icon src/main/resources/app-icon.png \
-            --dest dist/releases \
-            --app-version "$VERSION" \
-            --vendor "DiscordModernMusicBot" \
-            --description "ModernMusicBot desktop launcher" \
-            --linux-shortcut \
-            --linux-menu-group "Audio;Music;" \
-            --java-options "--enable-native-access=ALL-UNNAMED"
+              jpackage \
+                --type app-image \
+                --name ModernMusicBot \
+                --input dist/jpackage/input \
+                --main-jar DiscordModernMusicBot.jar \
+                --main-class com.artem.musicbot.ControlPanelApp \
+                --icon src/main/resources/app-icon.png \
+                --dest dist/jpackage \
+                --app-version "$VERSION" \
+                --vendor "DiscordModernMusicBot" \
+                --description "ModernMusicBot desktop launcher" \
+                --java-options "--enable-native-access=ALL-UNNAMED"
 
-          jpackage \
-            --type rpm \
-            --name ModernMusicBot \
-            --input dist/jpackage/input \
-            --main-jar DiscordModernMusicBot.jar \
-            --main-class com.artem.musicbot.ControlPanelApp \
-            --icon src/main/resources/app-icon.png \
-            --dest dist/releases \
-            --app-version "$VERSION" \
-            --vendor "DiscordModernMusicBot" \
-            --description "ModernMusicBot desktop launcher" \
-            --linux-shortcut \
-            --linux-menu-group "Audio;Music;" \
-            --java-options "--enable-native-access=ALL-UNNAMED"
+              jpackage \
+                --type deb \
+                --name ModernMusicBot \
+                --input dist/jpackage/input \
+                --main-jar DiscordModernMusicBot.jar \
+                --main-class com.artem.musicbot.ControlPanelApp \
+                --icon src/main/resources/app-icon.png \
+                --dest dist/releases \
+                --app-version "$VERSION" \
+                --vendor "DiscordModernMusicBot" \
+                --description "ModernMusicBot desktop launcher" \
+                --linux-shortcut \
+                --linux-menu-group "Audio;Music;" \
+                --java-options "--enable-native-access=ALL-UNNAMED"
 
-          DEB="$(ls dist/releases/*.deb | head -n 1)"
-          RPM="$(ls dist/releases/*.rpm | head -n 1)"
-          mv "$DEB" "dist/releases/DiscordModernMusicBot-v${VERSION}-linux-aarch64.deb"
-          mv "$RPM" "dist/releases/DiscordModernMusicBot-v${VERSION}-linux-aarch64.rpm"
+              jpackage \
+                --type rpm \
+                --name ModernMusicBot \
+                --input dist/jpackage/input \
+                --main-jar DiscordModernMusicBot.jar \
+                --main-class com.artem.musicbot.ControlPanelApp \
+                --icon src/main/resources/app-icon.png \
+                --dest dist/releases \
+                --app-version "$VERSION" \
+                --vendor "DiscordModernMusicBot" \
+                --description "ModernMusicBot desktop launcher" \
+                --linux-shortcut \
+                --linux-menu-group "Audio;Music;" \
+                --java-options "--enable-native-access=ALL-UNNAMED"
 
-          APPDIR="dist/appimage/ModernMusicBot.AppDir"
-          mkdir -p "$APPDIR/usr/lib/ModernMusicBot" "$APPDIR/usr/bin" \
-                   "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+              DEB="$(ls dist/releases/*.deb | head -n 1)"
+              RPM="$(ls dist/releases/*.rpm | head -n 1)"
+              mv "$DEB" "dist/releases/DiscordModernMusicBot-v${VERSION}-linux-aarch64.deb"
+              mv "$RPM" "dist/releases/DiscordModernMusicBot-v${VERSION}-linux-aarch64.rpm"
 
-          cp -r dist/jpackage/ModernMusicBot/* "$APPDIR/usr/lib/ModernMusicBot/"
-          ln -s ../lib/ModernMusicBot/bin/ModernMusicBot "$APPDIR/usr/bin/ModernMusicBot"
+              APPDIR="dist/appimage/ModernMusicBot.AppDir"
+              mkdir -p "$APPDIR/usr/lib/ModernMusicBot" "$APPDIR/usr/bin" \
+                       "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 
-          cat > "$APPDIR/usr/share/applications/modernmusicbot.desktop" <<'EOF'
+              cp -r dist/jpackage/ModernMusicBot/* "$APPDIR/usr/lib/ModernMusicBot/"
+              ln -s ../lib/ModernMusicBot/bin/ModernMusicBot "$APPDIR/usr/bin/ModernMusicBot"
+
+              cat > "$APPDIR/usr/share/applications/modernmusicbot.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=ModernMusicBot
@@ -438,21 +441,22 @@ Categories=Audio;Music;
 Terminal=false
 EOF
 
-          cp src/main/resources/app-icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/modernmusicbot.png"
-          cp "$APPDIR/usr/share/applications/modernmusicbot.desktop" "$APPDIR/modernmusicbot.desktop"
-          cp "$APPDIR/usr/share/icons/hicolor/256x256/apps/modernmusicbot.png" "$APPDIR/modernmusicbot.png"
+              cp src/main/resources/app-icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/modernmusicbot.png"
+              cp "$APPDIR/usr/share/applications/modernmusicbot.desktop" "$APPDIR/modernmusicbot.desktop"
+              cp "$APPDIR/usr/share/icons/hicolor/256x256/apps/modernmusicbot.png" "$APPDIR/modernmusicbot.png"
 
-          cat > "$APPDIR/AppRun" <<'EOF'
+              cat > "$APPDIR/AppRun" <<EOF
 #!/bin/sh
-HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/usr/bin/ModernMusicBot" "$@"
+HERE="\$(dirname "\$(readlink -f "\$0")")"
+exec "\$HERE/usr/bin/ModernMusicBot" "\$@"
 EOF
-          chmod +x "$APPDIR/AppRun"
+              chmod +x "$APPDIR/AppRun"
 
-          curl -L -o appimagetool.AppImage https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage
-          chmod +x appimagetool.AppImage
-          ./appimagetool.AppImage --appimage-extract
-          ARCH=aarch64 ./squashfs-root/usr/bin/appimagetool "$APPDIR" "dist/releases/DiscordModernMusicBot-v${VERSION}-linux-aarch64.AppImage"
+              curl -L -o appimagetool.AppImage https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage
+              chmod +x appimagetool.AppImage
+              ./appimagetool.AppImage --appimage-extract
+              ARCH=aarch64 ./squashfs-root/usr/bin/appimagetool "$APPDIR" "dist/releases/DiscordModernMusicBot-v${VERSION}-linux-aarch64.AppImage"
+            '
 
       - name: Upload Linux aarch64 installers
         uses: actions/upload-artifact@v4
