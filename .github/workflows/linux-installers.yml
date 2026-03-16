@@ -111,25 +111,25 @@ jobs:
           cp -r dist/jpackage/ModernMusicBot/* "$APPDIR/usr/lib/ModernMusicBot/"
           ln -s ../lib/ModernMusicBot/bin/ModernMusicBot "$APPDIR/usr/bin/ModernMusicBot"
 
-          cat > "$APPDIR/usr/share/applications/modernmusicbot.desktop" <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=ModernMusicBot
-Exec=ModernMusicBot
-Icon=modernmusicbot
-Categories=Audio;Music;
-Terminal=false
-EOF
+          printf '%s\n' \
+            '[Desktop Entry]' \
+            'Type=Application' \
+            'Name=ModernMusicBot' \
+            'Exec=ModernMusicBot' \
+            'Icon=modernmusicbot' \
+            'Categories=Audio;Music;' \
+            'Terminal=false' \
+            > "$APPDIR/usr/share/applications/modernmusicbot.desktop"
 
           cp src/main/resources/app-icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/modernmusicbot.png"
           cp "$APPDIR/usr/share/applications/modernmusicbot.desktop" "$APPDIR/modernmusicbot.desktop"
           cp "$APPDIR/usr/share/icons/hicolor/256x256/apps/modernmusicbot.png" "$APPDIR/modernmusicbot.png"
 
-          cat > "$APPDIR/AppRun" <<'EOF'
-#!/bin/sh
-HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/usr/bin/ModernMusicBot" "$@"
-EOF
+          printf '%s\n' \
+            '#!/bin/sh' \
+            'HERE="$(dirname "$(readlink -f "$0")")"' \
+            'exec "$HERE/usr/bin/ModernMusicBot" "$@"' \
+            > "$APPDIR/AppRun"
           chmod +x "$APPDIR/AppRun"
 
           curl -L -o appimagetool.AppImage https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
@@ -247,25 +247,25 @@ EOF
               cp -r dist/jpackage/ModernMusicBot/* "$APPDIR/usr/lib/ModernMusicBot/"
               ln -s ../lib/ModernMusicBot/bin/ModernMusicBot "$APPDIR/usr/bin/ModernMusicBot"
 
-              cat > "$APPDIR/usr/share/applications/modernmusicbot.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=ModernMusicBot
-Exec=ModernMusicBot
-Icon=modernmusicbot
-Categories=Audio;Music;
-Terminal=false
-EOF
+              printf '%s\n' \
+                "[Desktop Entry]" \
+                "Type=Application" \
+                "Name=ModernMusicBot" \
+                "Exec=ModernMusicBot" \
+                "Icon=modernmusicbot" \
+                "Categories=Audio;Music;" \
+                "Terminal=false" \
+                > "$APPDIR/usr/share/applications/modernmusicbot.desktop"
 
               cp src/main/resources/app-icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/modernmusicbot.png"
               cp "$APPDIR/usr/share/applications/modernmusicbot.desktop" "$APPDIR/modernmusicbot.desktop"
               cp "$APPDIR/usr/share/icons/hicolor/256x256/apps/modernmusicbot.png" "$APPDIR/modernmusicbot.png"
 
-              cat > "$APPDIR/AppRun" <<EOF
-#!/bin/sh
-HERE="\$(dirname "\$(readlink -f "\$0")")"
-exec "\$HERE/usr/bin/ModernMusicBot" "\$@"
-EOF
+              printf '%s\n' \
+                "#!/bin/sh" \
+                "HERE=\"\$(dirname \"\$(readlink -f \"\$0\")\")\"" \
+                "exec \"\$HERE/usr/bin/ModernMusicBot\" \"\$@\"" \
+                > "$APPDIR/AppRun"
               chmod +x "$APPDIR/AppRun"
 
               curl -L -o appimagetool.AppImage https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage
