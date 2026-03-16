@@ -295,7 +295,7 @@ jobs:
           cp -r dist/jpackage/ModernMusicBot/* "$APPDIR/usr/lib/ModernMusicBot/"
           ln -s ../lib/ModernMusicBot/bin/ModernMusicBot "$APPDIR/usr/bin/ModernMusicBot"
 
-          printf '%s\n' \
+          printf "%s\n" \
             '[Desktop Entry]' \
             'Type=Application' \
             'Name=ModernMusicBot' \
@@ -309,7 +309,7 @@ jobs:
           cp "$APPDIR/usr/share/applications/modernmusicbot.desktop" "$APPDIR/modernmusicbot.desktop"
           cp "$APPDIR/usr/share/icons/hicolor/256x256/apps/modernmusicbot.png" "$APPDIR/modernmusicbot.png"
 
-          printf '%s\n' \
+          printf "%s\n" \
             '#!/bin/sh' \
             'HERE="$(dirname "$(readlink -f "$0")")"' \
             'exec "$HERE/usr/bin/ModernMusicBot" "$@"' \
@@ -442,7 +442,7 @@ jobs:
               cp -r dist/jpackage/ModernMusicBot/* "$APPDIR/usr/lib/ModernMusicBot/"
               ln -s ../lib/ModernMusicBot/bin/ModernMusicBot "$APPDIR/usr/bin/ModernMusicBot"
 
-              printf '%s\n' \
+              printf "%s\n" \
                 "[Desktop Entry]" \
                 "Type=Application" \
                 "Name=ModernMusicBot" \
@@ -456,7 +456,7 @@ jobs:
               cp "$APPDIR/usr/share/applications/modernmusicbot.desktop" "$APPDIR/modernmusicbot.desktop"
               cp "$APPDIR/usr/share/icons/hicolor/256x256/apps/modernmusicbot.png" "$APPDIR/modernmusicbot.png"
 
-              printf '%s\n' \
+              printf "%s\n" \
                 "#!/bin/sh" \
                 "HERE=\"\$(dirname \"\$(readlink -f \"\$0\")\")\"" \
                 "exec \"\$HERE/usr/bin/ModernMusicBot\" \"\$@\"" \
