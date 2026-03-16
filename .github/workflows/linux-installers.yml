@@ -117,7 +117,7 @@ jobs:
             'Name=ModernMusicBot' \
             'Exec=ModernMusicBot' \
             'Icon=modernmusicbot' \
-            'Categories=Audio;Music;' \
+            'Categories=AudioVideo;Audio;Music;' \
             'Terminal=false' \
             > "$APPDIR/usr/share/applications/modernmusicbot.desktop"
 
@@ -264,7 +264,7 @@ jobs:
                 "Name=ModernMusicBot" \
                 "Exec=ModernMusicBot" \
                 "Icon=modernmusicbot" \
-                "Categories=Audio;Music;" \
+                "Categories=AudioVideo;Audio;Music;" \
                 "Terminal=false" \
                 > "$APPDIR/usr/share/applications/modernmusicbot.desktop"
 
@@ -279,6 +279,13 @@ jobs:
                 > "$APPDIR/AppRun"
               chmod +x "$APPDIR/AppRun"
             '
+
+      - name: Fix permissions for aarch64 artifacts
+        run: |
+          if [[ -d dist ]]; then
+            sudo chown -R "$USER:$USER" dist
+            chmod -R u+rwX dist
+          fi
 
       - name: Build Linux aarch64 AppImage (host)
         shell: bash
