@@ -210,7 +210,7 @@ jobs:
       - name: Install Linux packaging deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y fakeroot rpm
+          sudo apt-get install -y fakeroot rpm desktop-file-utils
 
       - name: Build Linux x86_64 installers (AppImage, deb, rpm)
         shell: bash
@@ -345,7 +345,7 @@ jobs:
             -w /workspace ubuntu:24.04 bash -lc '
               set -euo pipefail
               apt-get update
-              apt-get install -y ca-certificates curl git maven zip fakeroot rpm dpkg-dev
+              apt-get install -y ca-certificates curl git maven zip fakeroot rpm dpkg-dev desktop-file-utils
 
               VERSION="${GITHUB_REF_NAME:-}"
               if [[ "$VERSION" != v* ]]; then
