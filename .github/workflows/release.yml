@@ -180,7 +180,8 @@ jobs:
           if (-not (Test-Path $makensis)) {
             throw "NSIS compiler not found at $makensis"
           }
-          & $makensis "/DAPP_VERSION=$version" "installer\\ModernMusicBot.nsi"
+          $rootDir = $env:GITHUB_WORKSPACE
+          & $makensis "/DAPP_VERSION=$version" "/DROOT_DIR=$rootDir" "installer\\ModernMusicBot.nsi"
           $builtExe = Get-ChildItem dist/releases -Filter "DiscordModernMusicBot-v$version-windows-installer.exe" | Select-Object -First 1
           if ($null -eq $builtExe) {
             throw "Branded Windows EXE installer was not created"
