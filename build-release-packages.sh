@@ -58,7 +58,11 @@ build_package() {
 
   cp "$built_jar" "$package_dir/DiscordModernMusicBot.jar"
   copy_common_files "$package_dir"
-  cp "$ROOT_DIR/release-assets/$platform_dir"/* "$package_dir/"
+  if [[ "$platform_dir" == "windows" ]]; then
+    cp -r "$ROOT_DIR/release-assets/$platform_dir"/* "$package_dir/"
+  else
+    cp "$ROOT_DIR/release-assets/$platform_dir"/* "$package_dir/"
+  fi
 
   if [[ "$platform_dir" != "windows" ]]; then
     chmod +x "$package_dir"/* || true
