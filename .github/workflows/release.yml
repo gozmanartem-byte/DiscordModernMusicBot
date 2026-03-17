@@ -584,5 +584,6 @@ jobs:
           tag_name: ${{ steps.release_meta.outputs.tag }}
           files: dist/releases/*
           append_body: false
-          generate_release_notes: true
+          generate_release_notes: false
+          body_path: release-assets/RELEASE_NOTES_v2.0.0.md
           token: ${{ secrets.GITHUB_TOKEN }}
