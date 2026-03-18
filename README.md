@@ -29,8 +29,8 @@ Modern Java Discord music bot built with JDA, Lavaplayer, youtube-source, and JD
 | macOS (Apple Silicon) | `.dmg` | ✓ |
 | macOS (Intel) | `.dmg` | ✓ |
 | Windows x86-64 | `.exe` | ✓ |
-| Linux x86-64 | — | ✓ |
-| Linux ARM64 | — | ✓ |
+| Linux x86-64 | `.appimage` | ✓ |
+| Linux ARM64 | `.appimage` | ✓ |
 
 > Windows ARM is not supported.
 
